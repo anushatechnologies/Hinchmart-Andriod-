@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "HINCH MART",
+    "slug": "hinchmart",
+    "version": "1.0.2",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hinch",
+      "config": {
+        "googleMapsApiKey": "AIzaSyBQHBaFfRCHgCGKIpSm-EOsVy8dExFToeA"
+      }
+    },
+    "android": {
+      "package": "com.hinch",
+      "versionCode": 3,
+      "googleServicesFile": "./google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBQHBaFfRCHgCGKIpSm-EOsVy8dExFToeA"
+        }
+      },
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "permissions": [
+        "NOTIFICATIONS",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#152238"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow HINCH MART to access your location for delivery address detection."
+        }
+      ]
+    ],
+    "web": {
+      "favicon": "./assets/icon.png"
+    }
+  }
+}
