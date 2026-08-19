@@ -35,6 +35,8 @@ import { LocationPickerModal, PRESET_DELIVERY_SITES, DeliverySite } from '../../
 import * as Location from 'expo-location';
 import { useHomeData } from '../../../hooks/useProductsQuery';
 import { Product } from '../../../types/product.types';
+import { useAppSelector } from '../../../redux/hooks';
+import { selectCartItemCount } from '../../../redux/slices/cartSlice';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BANNER_WIDTH = SCREEN_WIDTH - 32;
@@ -189,6 +191,8 @@ export function HomeScreen({ navigation }: any) {
   const { banners, featured, refetchAll } = useHomeData();
   const bannerRef = useRef<FlatList>(null);
   const isDraggingRef = useRef(false);
+  const cartCount = useAppSelector(selectCartItemCount);
+  const unreadCount = useAppSelector((state) => state.notifications?.unreadCount || 0);
 
   const activeBanners = banners.length > 0 ? banners : MOCK_BANNERS;
   const activeProducts = featured.length > 0 ? featured : MOCK_FEATURED_PRODUCTS;
@@ -254,34 +258,84 @@ export function HomeScreen({ navigation }: any) {
     }
   };
 
+  const iconSurface = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(21, 34, 56, 0.05)';
+
   return (
     <Screen scrollable onRefresh={refetchAll}>
-      {/* 1. App Header (Logo + Cart/Notifications) */}
-      <Header
-        showNotification
-        onNotificationPress={() => navigation.navigate('Notifications')}
-      />
-
-      {/* 2. Delivery Location & B2B Wholesale Selector */}
-      <TouchableOpacity
-        onPress={() => setLocationModalVisible(true)}
-        activeOpacity={0.8}
-        style={[styles.locationBar, { backgroundColor: theme.colors.surfaceVariant, borderColor: theme.colors.border }]}
+      {/* 1. Top Brand Header: Logo on Top Left + Delivery Tag Directly Underneath */}
+      <View
+        style={[
+          styles.topHeaderBar,
+          {
+            backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
+            borderBottomColor: theme.colors.border,
+          },
+        ]}
       >
-        <View style={styles.locationLeft}>
-          <Ionicons name="location-sharp" size={14} color={theme.colors.primary} />
-          <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Deliver to:</Text>
-          <Text numberOfLines={1} style={[styles.locationText, { color: theme.colors.textPrimary, maxWidth: 160 }]}>
-            {selectedSite.city}, {selectedSite.country}
-          </Text>
-          <Ionicons name="chevron-down" size={12} color={theme.colors.textSecondary} />
-        </View>
-        <View style={[styles.wholesaleBadge, { backgroundColor: `${theme.colors.primary}18` }]}>
-          <Ionicons name="shield-checkmark" size={10} color={theme.colors.navy} />
-          <Text style={[styles.wholesaleText, { color: theme.colors.navy }]}>B2B Verified</Text>
-        </View>
-      </TouchableOpacity>
+        {/* Left Column: Brand Logo + Delivery Tag Aligned Underneath */}
+        <View style={styles.headerLeftCol}>
+          <Image
+            source={require('../../../assets/logo.png')}
+            style={styles.brandLogo}
+            contentFit="contain"
+            contentPosition="left center"
+          />
 
+          {/* Delivery Location Tag kept directly UNDER the Logo */}
+          <TouchableOpacity
+            onPress={() => setLocationModalVisible(true)}
+            activeOpacity={0.75}
+            style={styles.deliveryTagBtn}
+          >
+            <View style={[styles.locationIconPill, { backgroundColor: `${theme.colors.primary}20` }]}>
+              <Ionicons name="location-sharp" size={12} color={theme.colors.primary} />
+            </View>
+            <View style={styles.deliveryTextCol}>
+              <Text style={[styles.deliveryPrefix, { color: theme.colors.textTertiary }]}>
+                Deliver to
+              </Text>
+              <View style={styles.deliveryLocationRow}>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.deliveryLocationName, { color: theme.colors.textPrimary }]}
+                >
+                  {selectedSite.city ? `${selectedSite.city}, ${selectedSite.country}` : selectedSite.name}
+                </Text>
+                <Ionicons name="chevron-down" size={11} color={theme.colors.textSecondary} style={{ marginLeft: 2 }} />
+              </View>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Right Column: Actions (Notifications, RFQ, Cart) */}
+        <View style={styles.headerRightCol}>
+          {/* Notifications Button */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Notifications')}
+            activeOpacity={0.7}
+            style={[styles.headerIconBtn, { backgroundColor: iconSurface }]}
+          >
+            <Ionicons name="notifications-outline" size={20} color={theme.colors.textPrimary} />
+            {unreadCount > 0 && <View style={styles.notificationDot} />}
+          </TouchableOpacity>
+
+          {/* Cart Button */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('MainTabs', { screen: 'CartTab' })}
+            activeOpacity={0.7}
+            style={[styles.headerIconBtn, { backgroundColor: iconSurface }]}
+          >
+            <Ionicons name="cart-outline" size={20} color={theme.colors.textPrimary} />
+            {cartCount > 0 && (
+              <View style={[styles.cartBadge, { backgroundColor: '#EF4444' }]}>
+                <Text style={styles.cartBadgeText}>{cartCount > 99 ? '99+' : cartCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Location Picker Modal */}
       <LocationPickerModal
         visible={locationModalVisible}
         onClose={() => setLocationModalVisible(false)}
@@ -289,22 +343,51 @@ export function HomeScreen({ navigation }: any) {
         onSelectSite={(site) => setSelectedSite(site)}
       />
 
-      {/* Search Bar Header — taps navigate to Search screen */}
-      <TouchableOpacity
-        activeOpacity={0.8}
-        onPress={() => navigation.navigate('Search')}
-        style={styles.searchHeader}
-      >
-        <View pointerEvents="none" style={{ width: '100%' }}>
-          <SearchBar
-            value=""
-            onChangeText={() => {}}
-            placeholder="Search cement, steel, tools..."
-          />
-        </View>
-      </TouchableOpacity>
+      {/* 2. Search & Filter Bar */}
+      <View style={styles.searchSectionWrap}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('Search')}
+          style={[
+            styles.searchBarContainer,
+            {
+              backgroundColor: theme.colors.surfaceVariant,
+              borderColor: theme.colors.border,
+            },
+          ]}
+        >
+          <Ionicons name="search" size={18} color={theme.colors.textTertiary} style={styles.searchIcon} />
+          <Text style={[styles.searchPlaceholder, { color: theme.colors.textTertiary }]}>
+            Search cement, steel rebar, machinery, tools...
+          </Text>
+          <View style={[styles.searchActionBtn, { backgroundColor: `${theme.colors.primary}18` }]}>
+            <Ionicons name="options-outline" size={16} color={theme.colors.navy} />
+          </View>
+        </TouchableOpacity>
+      </View>
 
-      {/* Hero Banner Carousel */}
+      {/* 3. B2B Wholesale Announcement Strip */}
+      <View style={styles.tickerWrap}>
+        <LinearGradient
+          colors={isDark ? ['#1E293B', '#0F172A'] : ['#FFF8E1', '#FFFDE7']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[styles.tickerCard, { borderColor: isDark ? '#334155' : '#FFE082' }]}
+        >
+          <View style={styles.tickerLeft}>
+            <Ionicons name="flash" size={14} color="#FDB913" />
+            <Text style={[styles.tickerText, { color: isDark ? '#F1F5F9' : '#78350F' }]} numberOfLines={1}>
+              <Text style={{ fontFamily: 'Inter_700Bold' }}>B2B Wholesale: </Text>
+              Direct factory pricing & fast crane delivery
+            </Text>
+          </View>
+          <View style={styles.tickerBadge}>
+            <Text style={styles.tickerBadgeText}>VERIFIED</Text>
+          </View>
+        </LinearGradient>
+      </View>
+
+      {/* 4. Hero Banner Carousel */}
       <View style={styles.bannerContainer}>
         <FlatList
           ref={bannerRef}
@@ -314,9 +397,13 @@ export function HomeScreen({ navigation }: any) {
           decelerationRate="fast"
           showsHorizontalScrollIndicator={false}
           onScroll={handleScroll}
-          onScrollBeginDrag={() => { isDraggingRef.current = true; }}
+          onScrollBeginDrag={() => {
+            isDraggingRef.current = true;
+          }}
           onScrollEndDrag={() => {
-            setTimeout(() => { isDraggingRef.current = false; }, 2000);
+            setTimeout(() => {
+              isDraggingRef.current = false;
+            }, 2000);
           }}
           scrollEventThrottle={16}
           getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
@@ -343,20 +430,18 @@ export function HomeScreen({ navigation }: any) {
                   />
                 )}
                 <LinearGradient
-                  colors={['transparent', 'rgba(15, 23, 42, 0.65)']}
+                  colors={['transparent', 'rgba(15, 23, 42, 0.4)', 'rgba(15, 23, 42, 0.85)']}
                   style={styles.bannerOverlay}
                 >
-                  <View style={styles.bannerBadgeRow}>
-                    <View style={styles.bannerBadgePill}>
-                      <Ionicons name="flash" size={10} color="#FDB913" />
-                      <Text style={styles.bannerBadgeText}>{(item as any).badge || 'SPECIAL OFFER'}</Text>
-                    </View>
+                  <View style={styles.bannerBadgePill}>
+                    <Ionicons name="flash" size={10} color="#FDB913" />
+                    <Text style={styles.bannerBadgeText}>{(item as any).badge || 'SPECIAL OFFER'}</Text>
                   </View>
-                  <Text style={styles.bannerTitle}>{item.title}</Text>
-                  <Text style={styles.bannerSubtitle}>{item.subtitle}</Text>
+                  <Text style={styles.bannerTitle} numberOfLines={2}>{item.title}</Text>
+                  <Text style={styles.bannerSubtitle} numberOfLines={2}>{item.subtitle}</Text>
                   <View style={styles.bannerCTA}>
-                    <Text style={styles.bannerCTAText}>Explore Now</Text>
-                    <Ionicons name="arrow-forward" size={14} color="#FDB913" />
+                    <Text style={styles.bannerCTAText}>Explore Catalog</Text>
+                    <Ionicons name="arrow-forward" size={13} color="#FDB913" />
                   </View>
                 </LinearGradient>
               </TouchableOpacity>
@@ -372,7 +457,12 @@ export function HomeScreen({ navigation }: any) {
               style={[
                 styles.dot,
                 {
-                  backgroundColor: idx === activeBannerIndex ? theme.colors.primary : isDark ? 'rgba(255,255,255,0.25)' : 'rgba(21,34,56,0.2)',
+                  backgroundColor:
+                    idx === activeBannerIndex
+                      ? theme.colors.primary
+                      : isDark
+                      ? 'rgba(255,255,255,0.25)'
+                      : 'rgba(21,34,56,0.2)',
                   width: idx === activeBannerIndex ? 22 : 6,
                 },
               ]}
@@ -381,7 +471,7 @@ export function HomeScreen({ navigation }: any) {
         </View>
       </View>
 
-      {/* Quick Action Grid */}
+      {/* 5. Quick Actions Hub */}
       <View style={styles.quickActionRow}>
         {MOCK_QUICK_ACTIONS.map((item) => (
           <TouchableOpacity
@@ -390,7 +480,15 @@ export function HomeScreen({ navigation }: any) {
             style={styles.quickActionItem}
             activeOpacity={0.7}
           >
-            <View style={[styles.quickActionIcon, { backgroundColor: `${item.color}14` }]}>
+            <View
+              style={[
+                styles.quickActionIcon,
+                {
+                  backgroundColor: `${item.color}14`,
+                  borderColor: `${item.color}30`,
+                },
+              ]}
+            >
               <Ionicons name={item.iconName} size={22} color={item.color} />
             </View>
             <Text style={[styles.quickActionLabel, { color: theme.colors.textPrimary }]}>
@@ -400,10 +498,10 @@ export function HomeScreen({ navigation }: any) {
         ))}
       </View>
 
-      {/* Categories Section */}
+      {/* 6. Explore Categories (Clean 4x2 Grid) */}
       <Section
         title="Explore Categories"
-        subtitle="Sourced from verified manufacturers"
+        subtitle="Sourced from verified global manufacturers"
         onSeeAll={() => navigation.navigate('MainTabs', { screen: 'CategoriesTab' })}
       >
         <View style={styles.categoryGrid}>
@@ -424,7 +522,7 @@ export function HomeScreen({ navigation }: any) {
               activeOpacity={0.75}
             >
               <LinearGradient
-                colors={[`${cat.color}12`, `${cat.color}06`]}
+                colors={[`${cat.color}18`, `${cat.color}08`]}
                 style={styles.categoryIconCircle}
               >
                 <MaterialCommunityIcons name={cat.iconName} size={24} color={cat.color} />
@@ -440,10 +538,10 @@ export function HomeScreen({ navigation }: any) {
         </View>
       </Section>
 
-      {/* Featured Products — Horizontal Scroll */}
+      {/* 7. Featured Products — Horizontal Scroll */}
       <Section
         title="Featured Construction Supplies"
-        subtitle="B2B volume discounts available"
+        subtitle="Wholesale volume discounts & direct site delivery"
         onSeeAll={() => navigation.navigate('ProductList', { isFeatured: true })}
       >
         <FlatList
@@ -464,10 +562,10 @@ export function HomeScreen({ navigation }: any) {
         />
       </Section>
 
-      {/* RFQ Callout Banner */}
+      {/* 8. RFQ Callout Banner */}
       <View style={styles.rfqCalloutWrap}>
         <LinearGradient
-          colors={isDark ? ['#1C2333', '#152238'] : ['#152238', '#1A3050']}
+          colors={isDark ? ['#1E293B', '#0F172A'] : ['#152238', '#1F3456']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.rfqCalloutCard}
@@ -482,7 +580,7 @@ export function HomeScreen({ navigation }: any) {
             <View style={styles.rfqTextWrapper}>
               <Text style={styles.rfqTitle}>Need Custom B2B Quotations?</Text>
               <Text style={styles.rfqSub}>
-                Submit an RFQ and receive quotes from global suppliers within 24 hours.
+                Submit your Bill of Quantities (BOQ) and receive competitive bids within 24 hours.
               </Text>
             </View>
           </View>
@@ -496,60 +594,230 @@ export function HomeScreen({ navigation }: any) {
           </TouchableOpacity>
         </LinearGradient>
       </View>
+
+      {/* 9. Trust & Assurance Section */}
+      <View style={[styles.trustSection, { backgroundColor: theme.colors.surfaceVariant, borderColor: theme.colors.border }]}>
+        <Text style={[styles.trustSectionTitle, { color: theme.colors.textPrimary }]}>
+          Why Contractors Trust HINCH MART
+        </Text>
+        <View style={styles.trustGrid}>
+          <View style={styles.trustItem}>
+            <View style={[styles.trustIconWrap, { backgroundColor: `${theme.colors.primary}20` }]}>
+              <Ionicons name="shield-checkmark" size={18} color={theme.colors.navy} />
+            </View>
+            <Text style={[styles.trustItemTitle, { color: theme.colors.textPrimary }]}>Verified Suppliers</Text>
+            <Text style={[styles.trustItemDesc, { color: theme.colors.textSecondary }]}>
+              100% ISO & ASTM certified building materials
+            </Text>
+          </View>
+
+          <View style={styles.trustItem}>
+            <View style={[styles.trustIconWrap, { backgroundColor: `${theme.colors.primary}20` }]}>
+              <Ionicons name="car" size={18} color={theme.colors.navy} />
+            </View>
+            <Text style={[styles.trustItemTitle, { color: theme.colors.textPrimary }]}>Site Delivery</Text>
+            <Text style={[styles.trustItemDesc, { color: theme.colors.textSecondary }]}>
+              Direct crane and trailer unloading at project sites
+            </Text>
+          </View>
+
+          <View style={styles.trustItem}>
+            <View style={[styles.trustIconWrap, { backgroundColor: `${theme.colors.primary}20` }]}>
+              <Ionicons name="card" size={18} color={theme.colors.navy} />
+            </View>
+            <Text style={[styles.trustItemTitle, { color: theme.colors.textPrimary }]}>B2B Credit Terms</Text>
+            <Text style={[styles.trustItemDesc, { color: theme.colors.textSecondary }]}>
+              Flexible 30 to 60-day credit for verified contractors
+            </Text>
+          </View>
+
+          <View style={styles.trustItem}>
+            <View style={[styles.trustIconWrap, { backgroundColor: `${theme.colors.primary}20` }]}>
+              <Ionicons name="headset" size={18} color={theme.colors.navy} />
+            </View>
+            <Text style={[styles.trustItemTitle, { color: theme.colors.textPrimary }]}>Dedicated Support</Text>
+            <Text style={[styles.trustItemDesc, { color: theme.colors.textSecondary }]}>
+              24/7 technical team & key account management
+            </Text>
+          </View>
+        </View>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  locationBar: {
+  // Top Header Bar
+  topHeaderBar: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    borderBottomWidth: 0.5,
+  },
+  headerLeftCol: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  brandLogo: {
+    width: 140,
+    height: 32,
+  },
+  deliveryTagBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    gap: 6,
+  },
+  locationIconPill: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deliveryTextCol: {
+    flexShrink: 1,
+  },
+  deliveryPrefix: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 10,
+    lineHeight: 12,
+  },
+  deliveryLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  deliveryLocationName: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    maxWidth: 190,
+  },
+  headerRightCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 2,
+  },
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  notificationDot: {
+    position: 'absolute',
+    top: 8,
+    right: 9,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#EF4444',
+  },
+  cartBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  cartBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 8,
+    fontFamily: 'Inter_700Bold',
+  },
+
+  // Search Section
+  searchSectionWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 6,
+  },
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchPlaceholder: {
+    flex: 1,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+  },
+  searchActionBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+  },
+
+  // Ticker / Wholesale Strip
+  tickerWrap: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  tickerCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    marginHorizontal: 16,
-    borderRadius: 14,
-    borderWidth: 0.5,
-    marginTop: 8,
-    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
   },
-  locationLeft: {
+  tickerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    flex: 1,
+    gap: 6,
+    paddingRight: 8,
   },
-  locationLabel: {
+  tickerText: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11,
+    flex: 1,
   },
-  locationText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
+  tickerBadge: {
+    backgroundColor: '#FDB913',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-  wholesaleBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    gap: 3,
-  },
-  wholesaleText: {
+  tickerBadgeText: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 10,
+    fontSize: 8,
+    color: '#152238',
+    letterSpacing: 0.5,
   },
-  searchHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
+
+  // Hero Banners
   bannerContainer: {
-    marginVertical: 6,
+    marginTop: 6,
+    marginBottom: 10,
     position: 'relative',
   },
   bannerCard: {
     width: '100%',
-    height: 210,
-    borderRadius: 20,
+    height: 200,
+    borderRadius: 18,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -562,24 +830,21 @@ const styles = StyleSheet.create({
   },
   bannerOverlay: {
     ...StyleSheet.absoluteFillObject,
-    padding: 20,
+    padding: 16,
     justifyContent: 'flex-end',
-  },
-  bannerBadgeRow: {
-    position: 'absolute',
-    top: 14,
-    left: 14,
   },
   bannerBadgePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(253, 185, 19, 0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
     gap: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(253, 185, 19, 0.35)',
+    alignSelf: 'flex-start',
+    marginBottom: 6,
+    borderWidth: 0.5,
+    borderColor: 'rgba(253, 185, 19, 0.4)',
   },
   bannerBadgeText: {
     fontFamily: 'Inter_700Bold',
@@ -588,21 +853,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   bannerTitle: {
-    fontFamily: 'Poppins_800ExtraBold',
-    fontSize: 20,
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 18,
     color: '#FFFFFF',
-    marginTop: 8,
+    lineHeight: 22,
   },
   bannerSubtitle: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 13,
+    fontSize: 12,
     color: '#E2E8F0',
-    marginTop: 3,
+    marginTop: 2,
   },
   bannerCTA: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 8,
     gap: 4,
   },
   bannerCTAText: {
@@ -614,36 +879,42 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 10,
     gap: 5,
   },
   dot: {
-    height: 6,
-    borderRadius: 3,
+    height: 5,
+    borderRadius: 2.5,
   },
+
+  // Quick Action Grid
   quickActionRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 12,
-    marginVertical: 18,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginVertical: 14,
   },
   quickActionItem: {
     alignItems: 'center',
-    width: 68,
+    width: (SCREEN_WIDTH - 32) / 5,
   },
   quickActionIcon: {
-    width: 54,
-    height: 54,
+    width: 50,
+    height: 50,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
+    borderWidth: 1,
   },
   quickActionLabel: {
     fontFamily: 'Inter_500Medium',
-    fontSize: 11,
+    fontSize: 10,
     textAlign: 'center',
+    lineHeight: 13,
   },
+
+  // Categories
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -659,34 +930,38 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   categoryIconCircle: {
-    width: 46,
-    height: 46,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   categoryName: {
     fontFamily: 'Inter_500Medium',
     fontSize: 11,
     textAlign: 'center',
+    lineHeight: 14,
   },
+
+  // Featured
   featuredCardWrap: {
     marginRight: 12,
   },
+
   // RFQ Callout
   rfqCalloutWrap: {
     marginHorizontal: 16,
-    marginVertical: 20,
-    borderRadius: 20,
+    marginVertical: 16,
+    borderRadius: 18,
     overflow: 'hidden',
     ...(Platform.OS === 'ios'
       ? { shadowColor: '#152238', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 16 }
-      : { elevation: 6 }),
+      : { elevation: 4 }),
   },
   rfqCalloutCard: {
-    padding: 20,
-    borderRadius: 20,
+    padding: 18,
+    borderRadius: 18,
     overflow: 'hidden',
   },
   rfqAccentStripe: {
@@ -700,44 +975,87 @@ const styles = StyleSheet.create({
   rfqContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   rfqIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     backgroundColor: 'rgba(253, 185, 19, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
+    marginRight: 12,
   },
   rfqTextWrapper: {
     flex: 1,
   },
   rfqTitle: {
     fontFamily: 'Poppins_700Bold',
-    fontSize: 16,
+    fontSize: 15,
     color: '#FFFFFF',
   },
   rfqSub: {
     fontFamily: 'Inter_400Regular',
     fontSize: 12,
-    marginTop: 3,
-    lineHeight: 17,
-    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 2,
+    lineHeight: 16,
+    color: 'rgba(255, 255, 255, 0.75)',
   },
   rfqBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 12,
     backgroundColor: '#FDB913',
-    gap: 8,
+    gap: 6,
   },
   rfqBtnText: {
     fontFamily: 'Poppins_700Bold',
-    fontSize: 14,
+    fontSize: 13,
     color: '#152238',
+  },
+
+  // Trust Section
+  trustSection: {
+    marginHorizontal: 16,
+    marginVertical: 10,
+    padding: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  trustSectionTitle: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 14,
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  trustGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  trustItem: {
+    width: '48%',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  trustIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  trustItemTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  trustItemDesc: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 10,
+    lineHeight: 14,
   },
 });
