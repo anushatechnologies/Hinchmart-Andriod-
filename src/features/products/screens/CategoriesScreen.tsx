@@ -163,15 +163,54 @@ const INDUSTRY_FILTERS = [
   'Heavy Equipment',
 ];
 
+import { categoryApi } from '../../../api/categoryApi';
+
 export function CategoriesScreen({ navigation }: any) {
   const { theme, isDark } = useTheme();
+  const [categories, setCategories] = useState<CategoryItem[]>(CATEGORIES_DATA);
   const [selectedFilter, setSelectedFilter] = useState('All Categories');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Fetch live categories from backend: GET /api/categories
+  const fetchCategories = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
+    try {
+      const response = await categoryApi.getCategories();
+      const apiData = response.data?.data || (response.data as any);
+      if (Array.isArray(apiData) && apiData.length > 0) {
+        // Map backend category format to screen category item
+        const mapped: CategoryItem[] = apiData.map((c: any, idx: number) => ({
+          id: c.id || `cat_${idx}`,
+          name: c.name,
+          iconName: (c.icon || 'wall') as any,
+          color: c.color || CATEGORIES_DATA[idx % CATEGORIES_DATA.length]?.color || '#3B82F6',
+          bgGradient: c.bgGradient || CATEGORIES_DATA[idx % CATEGORIES_DATA.length]?.bgGradient || ['#1E3A8A', '#3B82F6'],
+          count: c.productCount ? `${c.productCount}+ Products` : `${c.count || '100+ Products'}`,
+          industry: c.industry || 'Civil & Structural',
+          sla: c.sla || 'Standard Delivery',
+          popularSpec: c.popularSpec || '',
+          sub: Array.isArray(c.subCategories) ? c.subCategories.map((s: any) => typeof s === 'string' ? s : s.name) : (c.sub || []),
+        }));
+        setCategories(mapped);
+      }
+    } catch (error) {
+      console.log('[CategoriesScreen] API fetch fallback to standard category list');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchCategories(false);
+  }, []);
 
   // Filter Categories dynamically based on industry and search query
   const filteredCategories = useMemo(() => {
-    return CATEGORIES_DATA.filter((cat) => {
+    return categories.filter((cat) => {
       const matchesIndustry =
         selectedFilter === 'All Categories' || cat.industry === selectedFilter;
       const matchesSearch =
@@ -181,7 +220,7 @@ export function CategoriesScreen({ navigation }: any) {
         (cat.popularSpec && cat.popularSpec.toLowerCase().includes(searchQuery.toLowerCase()));
       return matchesIndustry && matchesSearch;
     });
-  }, [selectedFilter, searchQuery]);
+  }, [categories, selectedFilter, searchQuery]);
 
   return (
     <Screen scrollable={false}>

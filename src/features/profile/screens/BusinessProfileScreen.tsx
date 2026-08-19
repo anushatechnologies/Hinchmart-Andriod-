@@ -132,7 +132,7 @@ export function BusinessProfileScreen({ navigation, route }: any) {
     const parts = fullName.trim().split(' ');
     const firstName = parts[0] || '';
     const lastName = parts.slice(1).join(' ') || '';
-    const certArray = certifications.split(',').map((c) => c.trim()).filter(Boolean);
+    const certArray = certifications.split(',').map((c: string) => c.trim()).filter(Boolean);
 
     dispatch(
       updateUser({

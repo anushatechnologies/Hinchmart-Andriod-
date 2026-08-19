@@ -212,6 +212,7 @@ export function CartScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   listPadding: {
     padding: 16,
+    paddingBottom: 110,
   },
   cartCard: {
     marginBottom: 12,

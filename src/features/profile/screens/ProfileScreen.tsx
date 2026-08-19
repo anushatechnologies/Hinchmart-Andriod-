@@ -13,7 +13,7 @@ import { Badge } from '../../../components/ui/Badge';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { useAppDispatch, useAppSelector } from '../../../redux/hooks';
-import { logout } from '../../../redux/slices/authSlice';
+import { authStore } from '../../../store/authStore';
 import { setThemeMode } from '../../../redux/slices/themeSlice';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -256,8 +256,8 @@ export function ProfileScreen({ navigation }: any) {
     ? ['#152238', '#1C2A42', '#243352'] as const
     : ['#152238', '#1A3050', '#223D60'] as const;
 
-  const handleSignOut = () => {
-    dispatch(logout());
+  const handleSignOut = async () => {
+    await authStore.logout();
     navigation.reset({
       index: 0,
       routes: [{ name: 'Login' }],

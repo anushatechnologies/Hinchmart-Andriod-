@@ -3,7 +3,7 @@
  * Ultra-modern glassy translucent finish with BlurView, gold sheen border, and glow pills
  */
 import React from 'react';
-import { View, StyleSheet, Platform, TouchableOpacity, Text } from 'react-native';
+import { View, StyleSheet, Platform, TouchableOpacity, Text, useWindowDimensions } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,12 +26,25 @@ const Tab = createBottomTabNavigator<BottomTabParamList>();
 function CustomGlassyTabBar({ state, descriptors, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
   const cartCount = useAppSelector(selectCartItemCount);
 
-  const bottomMargin = insets.bottom > 0 ? insets.bottom + 4 : 12;
+  const isSmallScreen = screenWidth < 360;
+  const bottomMargin = insets.bottom > 0 ? insets.bottom + 2 : 10;
+  const horizontalMargin = isSmallScreen ? 8 : 12;
 
   return (
-    <View style={[styles.floatingWrapper, { bottom: bottomMargin }]} pointerEvents="box-none">
+    <View
+      style={[
+        styles.floatingWrapper,
+        {
+          bottom: bottomMargin,
+          left: horizontalMargin,
+          right: horizontalMargin,
+        },
+      ]}
+      pointerEvents="box-none"
+    >
       <View style={styles.glassContainer}>
         {/* Real-time Frosted Glass Blur Background */}
         <BlurView
@@ -44,8 +57,8 @@ function CustomGlassyTabBar({ state, descriptors, navigation }: any) {
         <LinearGradient
           colors={
             isDark
-              ? ['rgba(30, 41, 59, 0.75)', 'rgba(15, 23, 42, 0.85)']
-              : ['rgba(255, 255, 255, 0.85)', 'rgba(248, 250, 252, 0.75)']
+              ? ['rgba(30, 41, 59, 0.85)', 'rgba(15, 23, 42, 0.92)']
+              : ['rgba(255, 255, 255, 0.90)', 'rgba(248, 250, 252, 0.82)']
           }
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
@@ -54,7 +67,7 @@ function CustomGlassyTabBar({ state, descriptors, navigation }: any) {
 
         {/* Gold Sheen Top Border Highlight */}
         <LinearGradient
-          colors={['rgba(253, 185, 19, 0.6)', 'rgba(253, 185, 19, 0.1)', 'rgba(253, 185, 19, 0.6)']}
+          colors={['rgba(253, 185, 19, 0.7)', 'rgba(253, 185, 19, 0.15)', 'rgba(253, 185, 19, 0.7)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.goldSheenBorder}
@@ -123,31 +136,33 @@ function CustomGlassyTabBar({ state, descriptors, navigation }: any) {
                     styles.iconPill,
                     isFocused && {
                       backgroundColor: 'rgba(253, 185, 19, 0.18)',
-                      borderColor: 'rgba(253, 185, 19, 0.4)',
+                      borderColor: 'rgba(253, 185, 19, 0.45)',
                       borderWidth: 1,
                     },
                   ]}
                 >
                   <Ionicons
                     name={isFocused ? iconName : outlineName}
-                    size={isFocused ? 21 : 19}
+                    size={isFocused ? 20 : 18}
                     color={isFocused ? theme.colors.primary : theme.colors.textTertiary}
                   />
 
                   {/* Cart Count Badge */}
                   {isCart && cartCount > 0 && (
                     <View style={[styles.cartBadge, { backgroundColor: theme.colors.danger }]}>
-                      <Text style={styles.cartBadgeText}>{cartCount}</Text>
+                      <Text style={styles.cartBadgeText}>{cartCount > 99 ? '99+' : cartCount}</Text>
                     </View>
                   )}
                 </View>
 
                 <Text
+                  numberOfLines={1}
                   style={[
                     styles.tabLabel,
                     {
                       color: isFocused ? theme.colors.primary : theme.colors.textTertiary,
                       fontFamily: isFocused ? 'Inter_700Bold' : 'Inter_500Medium',
+                      fontSize: isSmallScreen ? 9.5 : 10.5,
                     },
                   ]}
                 >
@@ -171,6 +186,7 @@ export function BottomTabNavigator() {
       tabBar={(props) => <CustomGlassyTabBar {...props} />}
       screenOptions={{
         headerShown: false,
+        tabBarHideOnKeyboard: true,
       }}
     >
       <Tab.Screen name="HomeTab" component={HomeScreen} options={{ tabBarLabel: 'Home' }} />
@@ -185,20 +201,19 @@ export function BottomTabNavigator() {
 const styles = StyleSheet.create({
   floatingWrapper: {
     position: 'absolute',
-    left: 12,
-    right: 12,
     elevation: 24,
     shadowColor: '#090D16',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.28,
-    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    zIndex: 100,
   },
   glassContainer: {
-    borderRadius: 30,
+    borderRadius: 28,
     overflow: 'hidden',
     borderWidth: 1.2,
-    borderColor: 'rgba(253, 185, 19, 0.4)',
-    height: 66,
+    borderColor: 'rgba(253, 185, 19, 0.35)',
+    height: 64,
   },
   goldSheenBorder: {
     position: 'absolute',
@@ -218,36 +233,36 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
+    paddingVertical: 3,
     position: 'relative',
   },
   iconPill: {
-    width: 48,
-    height: 30,
-    borderRadius: 15,
+    width: 44,
+    height: 28,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
-    marginBottom: 2,
+    marginBottom: 1,
   },
   tabLabel: {
-    fontSize: 10,
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
+    textAlign: 'center',
   },
   glowDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
     marginTop: 2,
     shadowColor: '#FDB913',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
-    shadowRadius: 5,
+    shadowRadius: 4,
   },
   cartBadge: {
     position: 'absolute',
     top: -4,
-    right: -4,
+    right: -6,
     minWidth: 16,
     height: 16,
     borderRadius: 8,

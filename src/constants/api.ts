@@ -2,23 +2,22 @@
  * HINCH MART — API Constants
  */
 
-export const API_BASE_URL = 'https://api.hinchmart.com/v1';
+export const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.hinchmart.com/v1';
+
 
 export const API_TIMEOUT = 30000; // 30 seconds
 
 export const API_ENDPOINTS = {
   // Auth
-  AUTH: {
-    LOGIN: '/auth/login',
-    SIGNUP: '/auth/signup',
-    LOGOUT: '/auth/logout',
-    REFRESH: '/auth/refresh-token',
-    VERIFY_OTP: '/auth/verify-otp',
-    RESEND_OTP: '/auth/resend-otp',
-    FORGOT_PASSWORD: '/auth/forgot-password',
-    RESET_PASSWORD: '/auth/reset-password',
-    BIOMETRIC: '/auth/biometric',
-  },
+ AUTH: {
+  SEND_OTP: '/auth/send-otp',
+  VERIFY_OTP: '/auth/verify-otp',
+  REGISTER: '/auth/register',
+  REFRESH: '/auth/refresh-token',
+  LOGOUT: '/auth/logout',
+  ME: '/auth/me',
+},
 
   // User / Profile
   USER: {

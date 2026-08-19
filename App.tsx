@@ -15,8 +15,15 @@ import { store, persistor } from './src/redux';
 import { queryClient } from './src/services/api/queryClient';
 import { ThemeProvider } from './src/theme';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { authStore } from './src/store/authStore';
+import { locationStore } from './src/store/locationStore';
 
 export default function App() {
+  React.useEffect(() => {
+    authStore.init();
+    locationStore.init();
+  }, []);
+
   return (
     <View style={styles.rootWrapper}>
       <SafeAreaProvider>
