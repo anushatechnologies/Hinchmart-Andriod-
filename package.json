@@ -12,7 +12,7 @@
     "@tanstack/react-query": "^5.101.4",
     "@types/redux-persist": "^4.0.0",
     "axios": "^1.19.0",
-    "expo": "~54.0.0",
+    "expo": "~54.0.37",
     "expo-blur": "~15.0.8",
     "expo-font": "~14.0.0",
     "expo-image": "~3.0.11",

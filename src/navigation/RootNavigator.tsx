@@ -14,6 +14,7 @@ import { OnboardingScreen } from '../features/auth/screens/OnboardingScreen';
 import { LoginScreen } from '../features/auth/screens/LoginScreen';
 import { SignupScreen } from '../features/auth/screens/SignupScreen';
 import { OTPScreen } from '../features/auth/screens/OTPScreen';
+import { RegistrationDetailsScreen } from '../features/auth/screens/RegistrationDetailsScreen';
 import { ForgotPasswordScreen } from '../features/auth/screens/ForgotPasswordScreen';
 
 import { ProductListScreen } from '../features/products/screens/ProductListScreen';
@@ -41,6 +42,7 @@ export function RootNavigator() {
         <Stack.Screen name="Signup" component={SignupScreen} />
         <Stack.Screen name="OTP" component={OTPScreen} />
         <Stack.Screen name="OTPVerification" component={OTPScreen} />
+        <Stack.Screen name="RegistrationDetails" component={RegistrationDetailsScreen} />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         <Stack.Screen name="ResetPassword" component={ForgotPasswordScreen} />
 
