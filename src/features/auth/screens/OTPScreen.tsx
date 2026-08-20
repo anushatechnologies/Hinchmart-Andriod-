@@ -1,12 +1,7 @@
 /**
- * HINCH MART — Dedicated OTP Verification Screen
- *
- * Full-screen OTP entry with:
- * - 6-box input with auto-advance & backspace
- * - Shake animation on error
- * - Resend countdown timer
- * - Dev mode bypass (123456)
- * - Edit phone number option
+ * HINCH MART — Premium Dynamic OTP Verification Screen
+ * High-aesthetic OTP verification with animated digit boxes,
+ * phone editing chip, resend countdown, and dev-mode auto fill.
  */
 import React, { useState, useEffect } from 'react';
 import {
@@ -17,6 +12,7 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
@@ -26,7 +22,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme } from '../../../theme';
 import { Screen } from '../../../components/layout/Screen';
-import { Button } from '../../../components/ui/Button';
 import { OTPInput } from '../../../components/ui/OTPInput';
 import { useAppDispatch, useAppSelector } from '../../../redux/hooks';
 import {
@@ -53,7 +48,6 @@ export function OTPScreen({ route, navigation }: any) {
   const [error, setError] = useState('');
   const [otpError, setOtpError] = useState(false);
 
-  // Format phone for display
   const formattedPhone = phone.length === 10
     ? `${phone.slice(0, 5)} ${phone.slice(5)}`
     : phone;
@@ -78,12 +72,11 @@ export function OTPScreen({ route, navigation }: any) {
       if (AUTH_CONFIG.developmentMode) {
         if (code !== AUTH_CONFIG.devOtp) {
           setOtpError(true);
-          setError('Invalid OTP. Use 123456 in dev mode.');
+          setError(`Invalid OTP. Enter ${AUTH_CONFIG.devOtp} in Dev Mode.`);
           setIsVerifying(false);
           return;
         }
 
-        // Dev mode: check if existing user
         if (phone === AUTH_CONFIG.devPhone) {
           dispatch(setCredentials(AUTH_CONFIG.devMockUser as any));
           navigation.replace('MainTabs');
@@ -107,7 +100,7 @@ export function OTPScreen({ route, navigation }: any) {
           }
         } else {
           setOtpError(true);
-          setError('Invalid OTP. Please try again.');
+          setError('Invalid OTP code. Please try again.');
         }
       }
     } catch (err: any) {
@@ -138,122 +131,135 @@ export function OTPScreen({ route, navigation }: any) {
     if (!AUTH_CONFIG.developmentMode) {
       try {
         await authApi.resendOTP({ phone, type: 'login' });
-      } catch (err) {
-        // Silent fail for resend
-      }
+      } catch {}
     }
   };
 
   return (
     <Screen scrollable>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
+        style={styles.keyboardContainer}
       >
-        {/* Back Button */}
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={24} color={theme.colors.navy} />
-        </TouchableOpacity>
-
-        {/* Icon */}
-        <Animated.View entering={FadeInDown.duration(500)} style={styles.iconSection}>
-          <View style={[styles.iconCircle, { backgroundColor: `${theme.colors.primary}15` }]}>
-            <Ionicons name="shield-checkmark-outline" size={40} color={theme.colors.primary} />
-          </View>
-        </Animated.View>
-
-        {/* Title */}
-        <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.headerBox}>
-          <Text style={[styles.title, { color: theme.colors.navy }]}>
-            Verify Your Number
-          </Text>
-          <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            Enter the 6-digit code sent to
-          </Text>
-        </Animated.View>
-
-        {/* Phone Display with Edit */}
-        <Animated.View entering={FadeInDown.delay(200).duration(400)}>
+        <View style={styles.container}>
+          {/* Top Bar */}
           <TouchableOpacity
             onPress={() => navigation.goBack()}
-            style={[styles.phoneChip, { backgroundColor: theme.colors.surfaceVariant }]}
+            style={styles.backBtn}
             activeOpacity={0.7}
           >
-            <Ionicons name="phone-portrait-outline" size={16} color={theme.colors.navy} />
-            <Text style={[styles.phoneText, { color: theme.colors.navy }]}>
-              +91 {formattedPhone}
-            </Text>
-            <Ionicons name="pencil-outline" size={14} color={theme.colors.primary} />
+            <Ionicons name="arrow-back" size={22} color={theme.colors.navy} />
           </TouchableOpacity>
-        </Animated.View>
 
-        {/* Dev Mode Hint */}
-        {AUTH_CONFIG.developmentMode && (
-          <Animated.View
-            entering={FadeIn.delay(300)}
-            style={[styles.devHint, { backgroundColor: `${theme.colors.info}12`, borderColor: `${theme.colors.info}30` }]}
-          >
-            <Ionicons name="information-circle-outline" size={16} color={theme.colors.info} />
-            <Text style={[styles.devHintText, { color: theme.colors.info }]}>
-              Dev Mode: Enter {AUTH_CONFIG.devOtp} to verify
+          {/* Central Animated Badge */}
+          <Animated.View entering={FadeInDown.duration(500)} style={styles.iconSection}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="shield-checkmark" size={38} color="#152238" />
+            </View>
+          </Animated.View>
+
+          {/* Header */}
+          <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.headerBox}>
+            <Text style={[styles.title, { color: theme.colors.navy }]}>
+              OTP Verification
+            </Text>
+            <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+              Enter the 6-digit code sent to your mobile number
             </Text>
           </Animated.View>
-        )}
 
-        {/* Error */}
-        {error ? (
-          <Animated.View
-            entering={FadeInDown.duration(300)}
-            style={[styles.errorBox, { backgroundColor: theme.colors.dangerLight }]}
-          >
-            <Ionicons name="alert-circle-outline" size={16} color={theme.colors.danger} />
-            <Text style={[styles.errorText, { color: theme.colors.danger }]}>{error}</Text>
+          {/* Phone Display Chip */}
+          <Animated.View entering={FadeInDown.delay(200).duration(400)}>
+            <View style={[styles.phoneChip, { backgroundColor: theme.colors.surfaceVariant, borderColor: theme.colors.border }]}>
+              <Ionicons name="phone-portrait" size={16} color={theme.colors.navy} />
+              <Text style={[styles.phoneText, { color: theme.colors.navy }]}>
+                +91 {formattedPhone}
+              </Text>
+              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.editPill}>
+                <Ionicons name="pencil" size={12} color="#152238" />
+                <Text style={styles.editPillText}>Change</Text>
+              </TouchableOpacity>
+            </View>
           </Animated.View>
-        ) : null}
 
-        {/* OTP Input */}
-        <Animated.View entering={FadeInUp.delay(300).duration(400)} style={styles.otpWrapper}>
-          <OTPInput
-            length={6}
-            onCodeFilled={handleVerify}
-            onCodeChanged={setOtpCode}
-            hasError={otpError}
-            autoFocus
-          />
-        </Animated.View>
-
-        {/* Verify Button */}
-        <Button
-          title="Verify & Continue"
-          onPress={() => handleVerify(otpCode)}
-          isLoading={isVerifying}
-          disabled={otpCode.length < 6}
-          size="lg"
-          variant="primary"
-          style={styles.verifyBtn}
-        />
-
-        {/* Resend Row */}
-        <View style={styles.resendRow}>
-          {countdown > 0 ? (
-            <Text style={[styles.resendTimer, { color: theme.colors.textTertiary }]}>
-              Didn't receive code? Resend in{' '}
-              <Text style={{ color: theme.colors.navy, fontFamily: 'Poppins_600SemiBold' }}>
-                {countdown}s
+          {/* Dev Mode Tip */}
+          {AUTH_CONFIG.developmentMode && (
+            <Animated.View
+              entering={FadeIn.delay(300)}
+              style={styles.devHint}
+            >
+              <Ionicons name="flash" size={14} color="#152238" />
+              <Text style={styles.devHintText}>
+                Dev Mode: Enter code <Text style={{ fontFamily: 'Poppins_700Bold' }}>{AUTH_CONFIG.devOtp}</Text>
               </Text>
-            </Text>
-          ) : (
-            <TouchableOpacity onPress={handleResend} style={styles.resendBtn}>
-              <Ionicons name="refresh-outline" size={16} color={theme.colors.primary} />
-              <Text style={[styles.resendLink, { color: theme.colors.primary }]}>
-                Resend OTP
-              </Text>
-            </TouchableOpacity>
+            </Animated.View>
           )}
+
+          {/* Error Banner */}
+          {error ? (
+            <Animated.View
+              entering={FadeInDown.duration(300)}
+              style={[styles.errorBox, { backgroundColor: theme.colors.dangerLight }]}
+            >
+              <Ionicons name="alert-circle" size={16} color={theme.colors.danger} />
+              <Text style={[styles.errorText, { color: theme.colors.danger }]}>{error}</Text>
+            </Animated.View>
+          ) : null}
+
+          {/* OTP Input Boxes */}
+          <Animated.View entering={FadeInUp.delay(300).duration(400)} style={styles.otpWrapper}>
+            <OTPInput
+              length={6}
+              onCodeFilled={handleVerify}
+              onCodeChanged={setOtpCode}
+              hasError={otpError}
+              autoFocus
+            />
+          </Animated.View>
+
+          {/* Verify Button */}
+          <TouchableOpacity
+            onPress={() => handleVerify(otpCode)}
+            disabled={otpCode.length < 6 || isVerifying}
+            activeOpacity={0.85}
+            style={[
+              styles.verifyBtn,
+              {
+                backgroundColor: otpCode.length >= 6 ? '#FDB913' : '#F4D37A',
+                shadowColor: '#FDB913',
+                shadowOpacity: otpCode.length >= 6 ? 0.35 : 0,
+              },
+            ]}
+          >
+            {isVerifying ? (
+              <Text style={styles.verifyBtnText}>Verifying...</Text>
+            ) : (
+              <View style={styles.btnInner}>
+                <Ionicons name="checkmark-done" size={20} color="#152238" style={{ marginRight: 6 }} />
+                <Text style={styles.verifyBtnText}>Verify & Continue</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Resend Row */}
+          <View style={styles.resendRow}>
+            {countdown > 0 ? (
+              <Text style={[styles.resendTimer, { color: theme.colors.textSecondary }]}>
+                Didn't receive code? Resend in{' '}
+                <Text style={{ color: theme.colors.navy, fontFamily: 'Poppins_700Bold' }}>
+                  {countdown}s
+                </Text>
+              </Text>
+            ) : (
+              <TouchableOpacity onPress={handleResend} style={styles.resendBtn} activeOpacity={0.7}>
+                <Ionicons name="refresh" size={16} color={theme.colors.navy} />
+                <Text style={[styles.resendLink, { color: theme.colors.navy }]}>
+                  Resend OTP Code
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </KeyboardAvoidingView>
     </Screen>
@@ -261,28 +267,42 @@ export function OTPScreen({ route, navigation }: any) {
 }
 
 const styles = StyleSheet.create({
+  keyboardContainer: {
+    flex: 1,
+  },
   container: {
-    padding: 24,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 32,
     flex: 1,
   },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 12,
+    backgroundColor: '#F8F9FA',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
+    marginBottom: 20,
   },
   iconSection: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#FDB913',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#FDB913',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 4,
   },
   headerBox: {
     alignItems: 'center',
@@ -291,49 +311,70 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: 'Poppins_700Bold',
     fontSize: 24,
-    marginBottom: 6,
+    marginBottom: 4,
     textAlign: 'center',
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 14,
+    fontSize: 13,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 19,
+    paddingHorizontal: 20,
   },
   phoneChip: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 20,
+    borderWidth: 1,
     gap: 8,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   phoneText: {
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 16,
+    fontSize: 15,
+  },
+  editPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FDB913',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    gap: 3,
+  },
+  editPillText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+    color: '#152238',
   },
   devHint: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 10,
+    alignSelf: 'center',
+    backgroundColor: '#FFF8E1',
     borderWidth: 1,
-    marginBottom: 12,
+    borderColor: '#FDB913',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
     gap: 6,
+    marginBottom: 12,
   },
   devHintText: {
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
-    flex: 1,
+    color: '#152238',
   },
   errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 10,
     borderRadius: 10,
-    marginBottom: 8,
+    marginBottom: 12,
     gap: 6,
   },
   errorText: {
@@ -342,12 +383,28 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   otpWrapper: {
-    paddingHorizontal: 8,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   verifyBtn: {
-    marginTop: 4,
+    height: 54,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
     marginBottom: 20,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  btnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifyBtnText: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 16,
+    color: '#152238',
   },
   resendRow: {
     alignItems: 'center',
@@ -361,9 +418,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
   },
   resendLink: {
     fontFamily: 'Poppins_600SemiBold',
     fontSize: 14,
+    textDecorationLine: 'underline',
   },
 });
