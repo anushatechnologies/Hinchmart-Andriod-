@@ -275,7 +275,7 @@ export function HomeScreen({ navigation }: any) {
         {/* Left Column: Brand Logo + Delivery Tag Aligned Underneath */}
         <View style={styles.headerLeftCol}>
           <Image
-            source={require('../../../assets/logo.png')}
+            source={require('../../../../assets/logo.png')}
             style={styles.brandLogo}
             contentFit="contain"
             contentPosition="left center"
