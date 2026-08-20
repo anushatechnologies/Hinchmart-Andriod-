@@ -11,6 +11,7 @@ export type AuthStackParamList = {
   ForgotPassword: undefined;
   ResetPassword: { token: string };
   BiometricSetup: undefined;
+  RegistrationDetails: { phone: string };
 };
 
 export type BottomTabParamList = {
