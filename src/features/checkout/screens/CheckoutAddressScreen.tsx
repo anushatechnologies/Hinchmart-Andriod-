@@ -1,242 +1,382 @@
 /**
- * HINCH MART — Checkout Address, Payment & Success Screens
+ * HINCH MART — Checkout Address Selection Screen (Step 1 of 4)
+ * Supports selecting site delivery address, adding a new project site address,
+ * and seamless continuation to Delivery options.
  */
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Modal,
+  TextInput,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme';
 import { Screen, Header } from '../../../components/layout/Screen';
-import { Card } from '../../../components/ui/Card';
+import { AddressCard } from '../../../components/cards/AddressCard';
 import { Button } from '../../../components/ui/Button';
-import { Badge } from '../../../components/ui/Badge';
-import { useAppDispatch } from '../../../redux/hooks';
-import { clearCart } from '../../../redux/slices/cartSlice';
+import { Card } from '../../../components/ui/Card';
+import { Address } from '../../../types/order.types';
 
-const DEMO_ADDRESSES = [
+export const INITIAL_SAVED_ADDRESSES: Address[] = [
   {
-    id: 'a1',
-    label: 'Headquarters & Site A',
-    name: 'Apex Construction Ltd',
-    phone: '+1 234 567 8900',
-    address: 'Plot 405, Industrial Zone 3, Business Bay, Dubai, UAE',
+    id: 'addr_1',
+    label: 'Main Construction Site A',
+    fullName: 'Rajesh Sharma (Project Head)',
+    phone: '+91 98765 43210',
+    addressLine1: 'Plot 405, Industrial Area, Sector 58',
+    addressLine2: 'Near Metro Pillar 124',
+    city: 'Hyderabad',
+    state: 'Telangana',
+    country: 'India',
+    postalCode: '500001',
     isDefault: true,
   },
   {
-    id: 'a2',
-    label: 'Secondary Warehouse',
-    name: 'Apex Logistics Hub',
-    phone: '+1 234 567 8901',
-    address: 'Gate 5, Jebel Ali Free Zone, Dubai, UAE',
+    id: 'addr_2',
+    label: 'Commercial Tower Project',
+    fullName: 'Amit Verma (Site Engineer)',
+    phone: '+91 98765 43211',
+    addressLine1: 'Gate 3, Financial District, Nanakramguda',
+    addressLine2: 'Tower B Construction Block',
+    city: 'Hyderabad',
+    state: 'Telangana',
+    country: 'India',
+    postalCode: '500032',
     isDefault: false,
   },
 ];
 
 export function CheckoutAddressScreen({ navigation }: any) {
-  const { theme } = useTheme();
-  const [selectedId, setSelectedId] = useState('a1');
-
-  return (
-    <Screen scrollable>
-      <Header title="Select Delivery Address" showBack onBackPress={() => navigation.goBack()} />
-
-      <View style={styles.paddingBox}>
-        {DEMO_ADDRESSES.map((addr) => (
-          <TouchableOpacity key={addr.id} onPress={() => setSelectedId(addr.id)} activeOpacity={0.9}>
-            <Card
-              variant="outlined"
-              style={[
-                styles.addrCard,
-                selectedId === addr.id && { borderColor: theme.colors.primary, borderWidth: 2 },
-              ]}
-            >
-              <View style={styles.rowBetween}>
-                <Text style={[styles.addrLabel, { color: theme.colors.navy }]}>{addr.label}</Text>
-                {addr.isDefault && <Badge label="DEFAULT" variant="navy" size="sm" />}
-              </View>
-
-              <Text style={[styles.addrName, { color: theme.colors.textPrimary }]}>{addr.name}</Text>
-              <Text style={[styles.addrText, { color: theme.colors.textSecondary }]}>{addr.address}</Text>
-              <Text style={[styles.addrPhone, { color: theme.colors.textTertiary }]}>📞 {addr.phone}</Text>
-            </Card>
-          </TouchableOpacity>
-        ))}
-
-        <Button
-          title="Continue to Payment"
-          onPress={() => navigation.navigate('CheckoutPayment')}
-          size="lg"
-          variant="primary"
-          style={styles.continueBtn}
-        />
-      </View>
-    </Screen>
+  const { theme, isDark } = useTheme();
+  const [addresses, setAddresses] = useState<Address[]>(INITIAL_SAVED_ADDRESSES);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>(
+    INITIAL_SAVED_ADDRESSES[0].id
   );
-}
 
-export function CheckoutPaymentScreen({ navigation }: any) {
-  const { theme } = useTheme();
-  const dispatch = useAppDispatch();
-  const [selectedMethod, setSelectedMethod] = useState('card');
-  const [isPlacing, setIsPlacing] = useState(false);
+  // New Address Modal
+  const [isAddModalVisible, setIsAddModalVisible] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newLine1, setNewLine1] = useState('');
+  const [newCity, setNewCity] = useState('Hyderabad');
+  const [newState, setNewState] = useState('Telangana');
+  const [newPincode, setNewPincode] = useState('');
+  const [formError, setFormError] = useState('');
 
-  const handlePlaceOrder = () => {
-    setIsPlacing(true);
-    setTimeout(() => {
-      setIsPlacing(false);
-      dispatch(clearCart());
-      navigation.replace('OrderSuccess', { orderNumber: 'HM-994821', orderId: 'o1' });
-    }, 1500);
+  const handleAddNewAddress = () => {
+    if (!newName.trim() || !newPhone.trim() || !newLine1.trim() || !newPincode.trim()) {
+      setFormError('Please fill in all mandatory address fields.');
+      return;
+    }
+
+    const createdAddress: Address = {
+      id: `addr_${Date.now()}`,
+      label: newLabel.trim() || 'Project Site',
+      fullName: newName.trim(),
+      phone: newPhone.trim(),
+      addressLine1: newLine1.trim(),
+      addressLine2: '',
+      city: newCity.trim(),
+      state: newState.trim(),
+      country: 'India',
+      postalCode: newPincode.trim(),
+      isDefault: false,
+    };
+
+    setAddresses([createdAddress, ...addresses]);
+    setSelectedAddressId(createdAddress.id);
+    setIsAddModalVisible(false);
+    // Reset fields
+    setNewLabel('');
+    setNewName('');
+    setNewPhone('');
+    setNewLine1('');
+    setNewPincode('');
+    setFormError('');
+  };
+
+  const handleContinue = () => {
+    navigation.navigate('CheckoutDelivery', { addressId: selectedAddressId });
   };
 
   return (
     <Screen scrollable>
-      <Header title="Select Payment Method" showBack onBackPress={() => navigation.goBack()} />
+      <Header
+        title="Select Delivery Address"
+        showBack
+        onBackPress={() => navigation.goBack()}
+      />
 
-      <View style={styles.paddingBox}>
-        {[
-          { id: 'card', label: 'Credit / Debit Card (B2B Corporate)', icon: '💳' },
-          { id: 'bank', label: 'Bank Wire Transfer (L/C & Escrow)', icon: '🏦' },
-          { id: 'wallet', label: 'HINCH MART Business Wallet', icon: '💼' },
-          { id: 'cod', label: 'Cash / Credit on Delivery', icon: '💵' },
-        ].map((method) => (
-          <TouchableOpacity
-            key={method.id}
-            onPress={() => setSelectedMethod(method.id)}
-            activeOpacity={0.9}
-          >
-            <Card
-              variant="outlined"
-              style={[
-                styles.addrCard,
-                selectedMethod === method.id && { borderColor: theme.colors.primary, borderWidth: 2 },
-              ]}
-            >
-              <View style={styles.rowAlign}>
-                <Text style={{ fontSize: 24, marginRight: 12 }}>{method.icon}</Text>
-                <Text style={[styles.addrName, { color: theme.colors.textPrimary }]}>
-                  {method.label}
-                </Text>
-              </View>
-            </Card>
-          </TouchableOpacity>
+      {/* Step Indicator */}
+      <View style={[styles.stepBar, { backgroundColor: theme.colors.surfaceVariant }]}>
+        <View style={styles.stepItem}>
+          <View style={[styles.stepDot, { backgroundColor: theme.colors.primary }]}>
+            <Text style={styles.stepNum}>1</Text>
+          </View>
+          <Text style={[styles.stepLabel, { color: theme.colors.navy, fontFamily: 'Poppins_600SemiBold' }]}>
+            Address
+          </Text>
+        </View>
+        <View style={[styles.stepLine, { backgroundColor: theme.colors.border }]} />
+        <View style={styles.stepItem}>
+          <View style={[styles.stepDot, { backgroundColor: theme.colors.border }]}>
+            <Text style={[styles.stepNum, { color: theme.colors.textSecondary }]}>2</Text>
+          </View>
+          <Text style={[styles.stepLabel, { color: theme.colors.textSecondary }]}>Logistics</Text>
+        </View>
+        <View style={[styles.stepLine, { backgroundColor: theme.colors.border }]} />
+        <View style={styles.stepItem}>
+          <View style={[styles.stepDot, { backgroundColor: theme.colors.border }]}>
+            <Text style={[styles.stepNum, { color: theme.colors.textSecondary }]}>3</Text>
+          </View>
+          <Text style={[styles.stepLabel, { color: theme.colors.textSecondary }]}>Payment</Text>
+        </View>
+      </View>
+
+      <View style={styles.content}>
+        {/* Add New Address Action */}
+        <TouchableOpacity
+          onPress={() => setIsAddModalVisible(true)}
+          style={[styles.addAddressBtn, { borderColor: theme.colors.primary, backgroundColor: `${theme.colors.primary}12` }]}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add-circle" size={20} color={theme.colors.navy} />
+          <Text style={[styles.addAddressText, { color: theme.colors.navy }]}>
+            + Add New Project Site Address
+          </Text>
+        </TouchableOpacity>
+
+        {/* Address Cards List */}
+        <Text style={[styles.sectionTitle, { color: theme.colors.navy }]}>
+          Saved Delivery Sites ({addresses.length})
+        </Text>
+
+        {addresses.map((addr) => (
+          <AddressCard
+            key={addr.id}
+            address={addr}
+            selected={selectedAddressId === addr.id}
+            onSelect={() => setSelectedAddressId(addr.id)}
+          />
         ))}
 
         <Button
-          title="Confirm & Place Order"
-          onPress={handlePlaceOrder}
-          isLoading={isPlacing}
+          title="Continue to Logistics & Freight"
+          onPress={handleContinue}
           size="lg"
           variant="primary"
           style={styles.continueBtn}
         />
       </View>
-    </Screen>
-  );
-}
 
-export function OrderSuccessScreen({ route, navigation }: any) {
-  const { theme } = useTheme();
-  const { orderNumber = 'HM-994821' } = route.params ?? {};
+      {/* ADD ADDRESS MODAL */}
+      <Modal visible={isAddModalVisible} animationType="slide" transparent>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalSheet, { backgroundColor: theme.colors.surface }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
+              <Text style={[styles.modalTitle, { color: theme.colors.navy }]}>
+                Add Project Site Address
+              </Text>
+              <TouchableOpacity onPress={() => setIsAddModalVisible(false)}>
+                <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
 
-  return (
-    <Screen scrollable={false}>
-      <View style={styles.centerContainer}>
-        <View style={[styles.successIconBox, { backgroundColor: theme.colors.successLight }]}>
-          <Text style={{ fontSize: 48 }}>🎉</Text>
+            <ScrollView contentContainerStyle={styles.modalScroll}>
+              {formError ? (
+                <View style={styles.errorBox}>
+                  <Ionicons name="alert-circle" size={14} color="#EF4444" />
+                  <Text style={styles.errorText}>{formError}</Text>
+                </View>
+              ) : null}
+
+              <Text style={styles.inputLabel}>Site / Location Label *</Text>
+              <TextInput
+                value={newLabel}
+                onChangeText={setNewLabel}
+                placeholder="e.g. Project Site B / Main Warehouse"
+                style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
+              />
+
+              <Text style={styles.inputLabel}>Recipient / Site Manager Name *</Text>
+              <TextInput
+                value={newName}
+                onChangeText={setNewName}
+                placeholder="Full Name"
+                style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
+              />
+
+              <Text style={styles.inputLabel}>Contact Phone Number *</Text>
+              <TextInput
+                value={newPhone}
+                onChangeText={setNewPhone}
+                placeholder="+91 98765 43210"
+                keyboardType="phone-pad"
+                style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
+              />
+
+              <Text style={styles.inputLabel}>Address Line 1 (Plot, Street, Area) *</Text>
+              <TextInput
+                value={newLine1}
+                onChangeText={setNewLine1}
+                placeholder="Plot / House / Street"
+                style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>City *</Text>
+                  <TextInput
+                    value={newCity}
+                    onChangeText={setNewCity}
+                    style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Pincode *</Text>
+                  <TextInput
+                    value={newPincode}
+                    onChangeText={setNewPincode}
+                    placeholder="500001"
+                    keyboardType="numeric"
+                    maxLength={6}
+                    style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
+                  />
+                </View>
+              </View>
+
+              <Button
+                title="Save & Select Address"
+                onPress={handleAddNewAddress}
+                size="lg"
+                variant="primary"
+                style={{ marginTop: 18 }}
+              />
+            </ScrollView>
+          </View>
         </View>
-
-        <Text style={[styles.successTitle, { color: theme.colors.navy }]}>
-          Order Placed Successfully!
-        </Text>
-
-        <Text style={[styles.successSub, { color: theme.colors.textSecondary }]}>
-          Order number #{orderNumber} has been received and is being processed by our logistics team.
-        </Text>
-
-        <Button
-          title="Track Order Status"
-          onPress={() => navigation.replace('OrderHistory')}
-          size="lg"
-          variant="navy"
-          style={{ width: '100%', marginBottom: 12 }}
-        />
-
-        <Button
-          title="Continue Shopping"
-          onPress={() => navigation.replace('MainTabs')}
-          size="lg"
-          variant="outline"
-          style={{ width: '100%' }}
-        />
-      </View>
+      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  paddingBox: {
-    padding: 16,
-  },
-  addrCard: {
-    marginBottom: 12,
-    padding: 16,
-  },
-  rowBetween: {
+  stepBar: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
   },
-  rowAlign: {
+  stepItem: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  stepDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepNum: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
+    color: '#152238',
+  },
+  stepLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11,
+  },
+  stepLine: {
+    flex: 1,
+    height: 1.5,
+    marginHorizontal: 8,
+    marginBottom: 16,
+  },
+  content: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+  addAddressBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    gap: 8,
+    marginBottom: 16,
   },
-  addrLabel: {
+  addAddressText: {
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 15,
-  },
-  addrName: {
-    fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
-    marginBottom: 4,
   },
-  addrText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 6,
-  },
-  addrPhone: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
+  sectionTitle: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 15,
+    marginBottom: 12,
   },
   continueBtn: {
     marginTop: 16,
   },
-  centerContainer: {
+  modalBackdrop: {
     flex: 1,
-    padding: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
   },
-  successIconBox: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
+  modalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
+    paddingBottom: 24,
   },
-  successTitle: {
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  modalTitle: {
     fontFamily: 'Poppins_700Bold',
-    fontSize: 24,
-    textAlign: 'center',
-    marginBottom: 8,
+    fontSize: 16,
   },
-  successSub: {
-    fontFamily: 'Inter_400Regular',
+  modalScroll: {
+    padding: 16,
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    padding: 10,
+    borderRadius: 8,
+    gap: 6,
+    marginBottom: 12,
+  },
+  errorText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    color: '#EF4444',
+  },
+  inputLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12.5,
+    marginBottom: 4,
+    marginTop: 8,
+  },
+  input: {
+    height: 46,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontFamily: 'Inter_500Medium',
     fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 32,
   },
 });

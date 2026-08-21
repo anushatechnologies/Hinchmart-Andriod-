@@ -137,6 +137,7 @@ export interface HeaderProps {
   showNotification?: boolean;
   onNotificationPress?: () => void;
   rightAction?: React.ReactNode;
+  rightComponent?: React.ReactNode;
   style?: ViewStyle;
 }
 
@@ -151,6 +152,7 @@ export function Header({
   showNotification = false,
   onNotificationPress,
   rightAction,
+  rightComponent,
   style,
 }: HeaderProps) {
   const { theme, isDark } = useTheme();
@@ -224,7 +226,7 @@ export function Header({
           <HeaderIconButton name="notifications-outline" onPress={onNotificationPress} color={theme.colors.textPrimary} surfaceColor={iconSurface} />
         )}
 
-        {rightAction}
+        {rightComponent || rightAction}
       </View>
     </View>
   );
@@ -328,8 +330,8 @@ const styles = StyleSheet.create({
     borderRadius: 7,
   },
   headerTitle: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 16,
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 20,
     flex: 1,
   },
   headerRight: {

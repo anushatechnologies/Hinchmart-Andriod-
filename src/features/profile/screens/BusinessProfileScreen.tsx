@@ -1,6 +1,5 @@
 /**
- * HINCH MART — Business Profile & Interactive Address Management Screens
- * Enhanced with full interactive Edit Profile modal and Redux integration
+ * HINCH MART — Business Profile & Complete Address CRUD Management Screens
  */
 import React, { useState, useEffect } from 'react';
 import {
@@ -29,6 +28,7 @@ export interface SiteAddress {
   city: string;
   zipCode: string;
   phone: string;
+  type: 'Home' | 'Work' | 'Site';
   isDefault: boolean;
 }
 
@@ -39,7 +39,8 @@ const INITIAL_ADDRESSES: SiteAddress[] = [
     address: 'Plot 405, Industrial Zone 3, Business Bay',
     city: 'Hyderabad, Telangana',
     zipCode: '500032',
-    phone: '+91 8388899999',
+    phone: '+91 98765 43210',
+    type: 'Site',
     isDefault: true,
   },
   {
@@ -48,7 +49,8 @@ const INITIAL_ADDRESSES: SiteAddress[] = [
     address: 'Sector 14, Outer Ring Road, Cyberabad',
     city: 'Hyderabad, Telangana',
     zipCode: '500081',
-    phone: '+91 9876543210',
+    phone: '+91 98765 43211',
+    type: 'Work',
     isDefault: false,
   },
 ];
@@ -58,102 +60,67 @@ export function BusinessProfileScreen({ navigation, route }: any) {
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
 
-  // Edit Modal Visibility
   const [editModalVisible, setEditModalVisible] = useState(
     route?.params?.openEdit ?? false
   );
 
-  // Profile Form States
-  const [fullName, setFullName] = useState(user?.fullName || 'Anusha Bazaar');
+  const [fullName, setFullName] = useState(user?.fullName || 'User');
   const [companyName, setCompanyName] = useState(
-    user?.businessProfile?.companyName || 'Anusha Global Construction Ltd'
+    user?.businessProfile?.companyName || 'Apex Construction Ltd'
   );
-  const [email, setEmail] = useState(user?.email || 'anushabazaar4@gmail.com');
-  const [phone, setPhone] = useState(user?.phone || '+91 8388899999');
-  const [regNumber, setRegNumber] = useState(
-    user?.businessProfile?.registrationNumber || 'REG-994821'
+  const [email, setEmail] = useState(user?.email || '');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [gstNumber, setGstNumber] = useState(
+    user?.businessProfile?.gstNumber || user?.businessProfile?.taxId || ''
   );
-  const [taxId, setTaxId] = useState(user?.businessProfile?.taxId || 'TAX-0041920');
   const [industry, setIndustry] = useState(
     user?.businessProfile?.industry || 'Commercial Construction & Infrastructure'
   );
-  const [website, setWebsite] = useState(
-    user?.businessProfile?.website || 'https://hinchmart.com'
-  );
-  const [employeeCount, setEmployeeCount] = useState(
-    user?.businessProfile?.employeeCount || '50 - 100 Employees'
-  );
-  const [annualRevenue, setAnnualRevenue] = useState(
-    user?.businessProfile?.annualRevenue || '$10M - $50M USD'
-  );
-  const [foundedYear, setFoundedYear] = useState(
-    String(user?.businessProfile?.foundedYear || 2018)
-  );
-  const [certifications, setCertifications] = useState(
-    user?.businessProfile?.certifications?.join(', ') || 'ISO 9001, LEED Certified, B2B Verified'
-  );
-  const [description, setDescription] = useState(
-    user?.businessProfile?.description || 'General contractors for high-rise infrastructure & commercial project procurement.'
-  );
+  const [website, setWebsite] = useState(user?.businessProfile?.website || '');
 
-  // Sync state when user object changes
   useEffect(() => {
     if (user) {
-      setFullName(user.fullName || 'Anusha Bazaar');
-      setCompanyName(user.businessProfile?.companyName || 'Anusha Global Construction Ltd');
-      setEmail(user.email || 'anushabazaar4@gmail.com');
-      setPhone(user.phone || '+91 8388899999');
-      setRegNumber(user.businessProfile?.registrationNumber || 'REG-994821');
-      setTaxId(user.businessProfile?.taxId || 'TAX-0041920');
+      setFullName(user.fullName || 'User');
+      setCompanyName(user.businessProfile?.companyName || 'Apex Construction Ltd');
+      setEmail(user.email || '');
+      setPhone(user.phone || '');
+      setGstNumber(user.businessProfile?.gstNumber || user.businessProfile?.taxId || '');
       setIndustry(user.businessProfile?.industry || 'Commercial Construction & Infrastructure');
-      setWebsite(user.businessProfile?.website || 'https://hinchmart.com');
-      setEmployeeCount(user.businessProfile?.employeeCount || '50 - 100 Employees');
-      setAnnualRevenue(user.businessProfile?.annualRevenue || '$10M - $50M USD');
-      setFoundedYear(String(user.businessProfile?.foundedYear || 2018));
-      setCertifications(user.businessProfile?.certifications?.join(', ') || 'ISO 9001, LEED Certified, B2B Verified');
-      setDescription(user.businessProfile?.description || 'General contractors for high-rise infrastructure & commercial project procurement.');
+      setWebsite(user.businessProfile?.website || '');
     }
   }, [user]);
 
-  // Open edit modal if openEdit param is passed
-  useEffect(() => {
-    if (route?.params?.openEdit) {
-      setEditModalVisible(true);
-    }
-  }, [route?.params?.openEdit]);
-
   const handleSaveProfile = () => {
-    if (!fullName.trim() || !companyName.trim() || !email.trim()) {
-      Alert.alert('Required Fields', 'Please enter Full Name, Company Name and Email.');
+    if (!fullName.trim()) {
+      Alert.alert('Required Field', 'Please enter Full Name.');
       return;
     }
 
-    // Split name into first and last name
     const parts = fullName.trim().split(' ');
     const firstName = parts[0] || '';
     const lastName = parts.slice(1).join(' ') || '';
-    const certArray = certifications.split(',').map((c: string) => c.trim()).filter(Boolean);
 
     dispatch(
       updateUser({
         fullName: fullName.trim(),
         firstName,
         lastName,
-        email: email.trim(),
-        phone: phone.trim(),
+        email: email.trim() || null,
+        phone: phone.trim() || user?.phone || '',
         businessProfile: {
           id: user?.businessProfile?.id || 'bp-1',
-          companyName: companyName.trim(),
+          companyName: companyName.trim() || 'Apex Construction Ltd',
           companyLogo: user?.businessProfile?.companyLogo || null,
-          registrationNumber: regNumber.trim(),
-          taxId: taxId.trim(),
-          employeeCount: employeeCount.trim(),
-          annualRevenue: annualRevenue.trim(),
+          registrationNumber: user?.businessProfile?.registrationNumber || 'REG-994821',
+          gstNumber: gstNumber.trim() || undefined,
+          taxId: gstNumber.trim() || undefined,
+          employeeCount: user?.businessProfile?.employeeCount || '50 - 100 Employees',
+          annualRevenue: user?.businessProfile?.annualRevenue || 'Standard',
           industry: industry.trim(),
           website: website.trim(),
-          description: description.trim(),
-          foundedYear: Number(foundedYear) || 2018,
-          certifications: certArray.length > 0 ? certArray : ['ISO 9001'],
+          description: user?.businessProfile?.description || '',
+          foundedYear: user?.businessProfile?.foundedYear || 2018,
+          certifications: user?.businessProfile?.certifications || ['B2B Verified'],
           isVerified: true,
         },
       })
@@ -168,18 +135,17 @@ export function BusinessProfileScreen({ navigation, route }: any) {
       <Header title="Business Profile" showBack onBackPress={() => navigation.goBack()} />
 
       <View style={{ padding: 16 }}>
-        {/* Main Company Card with Edit Action */}
         <Card variant="filled" style={{ backgroundColor: theme.colors.navy, padding: 20, marginBottom: 16 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <View style={{ flex: 1, paddingRight: 12 }}>
               <Text style={{ color: theme.colors.primary, fontFamily: 'Poppins_700Bold', fontSize: 20 }}>
-                {companyName}
+                {companyName || 'Business Profile'}
               </Text>
               <Text style={{ color: '#E9ECEF', fontFamily: 'Inter_500Medium', fontSize: 14, marginTop: 4 }}>
                 {fullName}
               </Text>
               <Text style={{ color: 'rgba(233, 236, 239, 0.7)', fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 }}>
-                {email} • {phone}
+                {email || 'No Email'} • {phone || 'No Phone'}
               </Text>
             </View>
 
@@ -188,19 +154,21 @@ export function BusinessProfileScreen({ navigation, route }: any) {
               style={styles.editCardBtn}
               activeOpacity={0.8}
             >
-              <Ionicons name="create" size={18} color="#152238" />
+              <Ionicons name="create" size={16} color="#152238" />
               <Text style={styles.editCardBtnText}>Edit</Text>
             </TouchableOpacity>
           </View>
 
-          <Badge label="VERIFIED B2B ENTITY" variant="success" size="sm" style={{ marginTop: 14 }} />
+          {gstNumber ? (
+            <Badge label={`GST: ${gstNumber}`} variant="success" size="sm" style={{ marginTop: 14 }} />
+          ) : null}
         </Card>
 
-        {/* Business Details Overview */}
+        {/* Business Overview */}
         <Card variant="outlined" style={{ padding: 16, marginBottom: 16 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <Text style={{ fontFamily: 'Poppins_600SemiBold', fontSize: 16, color: theme.colors.textPrimary }}>
-              Company & Tax Information
+              Company Details
             </Text>
             <TouchableOpacity onPress={() => setEditModalVisible(true)}>
               <Ionicons name="create-outline" size={18} color={theme.colors.primary} />
@@ -213,53 +181,23 @@ export function BusinessProfileScreen({ navigation, route }: any) {
           </View>
 
           <View style={styles.infoRow}>
-            <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Registration Number:</Text>
-            <Text style={[styles.infoVal, { color: theme.colors.textPrimary }]}>{regNumber}</Text>
+            <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>GSTIN / Tax ID:</Text>
+            <Text style={[styles.infoVal, { color: theme.colors.textPrimary }]}>{gstNumber || 'Not Specified'}</Text>
           </View>
 
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>VAT / Tax ID:</Text>
-            <Text style={[styles.infoVal, { color: theme.colors.textPrimary }]}>{taxId}</Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Company Website:</Text>
-            <Text style={[styles.infoVal, { color: theme.colors.primary }]}>{website}</Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Employee Count:</Text>
-            <Text style={[styles.infoVal, { color: theme.colors.textPrimary }]}>{employeeCount}</Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Annual Revenue:</Text>
-            <Text style={[styles.infoVal, { color: theme.colors.textPrimary }]}>{annualRevenue}</Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Founded Year:</Text>
-            <Text style={[styles.infoVal, { color: theme.colors.textPrimary }]}>{foundedYear}</Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Certifications:</Text>
-            <Text style={[styles.infoVal, { color: theme.colors.textPrimary }]}>{certifications}</Text>
-          </View>
-
-          <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: theme.colors.border }}>
-            <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, marginBottom: 4 }]}>Business Overview:</Text>
-            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: theme.colors.textPrimary, lineHeight: 18 }}>{description}</Text>
-          </View>
+          {website ? (
+            <View style={styles.infoRow}>
+              <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Website:</Text>
+              <Text style={[styles.infoVal, { color: theme.colors.primary }]}>{website}</Text>
+            </View>
+          ) : null}
         </Card>
 
-        {/* Quick Action Button to Edit Profile */}
         <Button
-          title="Edit All Profile Information"
-          onPress={() => setEditModalVisible(true)}
+          title="Edit Profile Details"
+          onPress={() => navigation.navigate('EditProfile')}
           variant="primary"
           size="md"
-          iconLeft={<Ionicons name="create-outline" size={18} color="#152238" />}
         />
       </View>
 
@@ -274,31 +212,28 @@ export function BusinessProfileScreen({ navigation, route }: any) {
           <View style={[styles.modalCard, { backgroundColor: theme.colors.surface }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
-                Edit All Business Profile Fields
+                Edit Business Information
               </Text>
-              <TouchableOpacity onPress={() => setEditModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
                 <Ionicons name="close-circle" size={24} color={theme.colors.textTertiary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 480 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
               <Input
-                label="Full Name / Representative"
-                placeholder="e.g. Anusha Bazaar"
+                label="Full Name *"
                 value={fullName}
                 onChangeText={setFullName}
                 style={styles.inputMargin}
               />
               <Input
                 label="Company Name"
-                placeholder="e.g. Anusha Global Construction Ltd"
                 value={companyName}
                 onChangeText={setCompanyName}
                 style={styles.inputMargin}
               />
               <Input
                 label="Email Address"
-                placeholder="e.g. anushabazaar4@gmail.com"
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -307,77 +242,16 @@ export function BusinessProfileScreen({ navigation, route }: any) {
               />
               <Input
                 label="Contact Phone"
-                placeholder="e.g. +91 8388899999"
                 value={phone}
                 onChangeText={setPhone}
                 keyboardType="phone-pad"
                 style={styles.inputMargin}
               />
               <Input
-                label="Industry Sector"
-                placeholder="e.g. Commercial Construction & Infrastructure"
-                value={industry}
-                onChangeText={setIndustry}
-                style={styles.inputMargin}
-              />
-              <Input
-                label="Company Website"
-                placeholder="e.g. https://hinchmart.com"
-                value={website}
-                onChangeText={setWebsite}
-                autoCapitalize="none"
-                style={styles.inputMargin}
-              />
-              <Input
-                label="Company Registration Number"
-                placeholder="e.g. REG-994821"
-                value={regNumber}
-                onChangeText={setRegNumber}
-                style={styles.inputMargin}
-              />
-              <Input
-                label="VAT / Tax Identification ID"
-                placeholder="e.g. TAX-0041920"
-                value={taxId}
-                onChangeText={setTaxId}
-                style={styles.inputMargin}
-              />
-              <Input
-                label="Employee Count"
-                placeholder="e.g. 50 - 100 Employees"
-                value={employeeCount}
-                onChangeText={setEmployeeCount}
-                style={styles.inputMargin}
-              />
-              <Input
-                label="Annual Revenue"
-                placeholder="e.g. $10M - $50M USD"
-                value={annualRevenue}
-                onChangeText={setAnnualRevenue}
-                style={styles.inputMargin}
-              />
-              <Input
-                label="Year Founded"
-                placeholder="e.g. 2018"
-                value={foundedYear}
-                onChangeText={setFoundedYear}
-                keyboardType="number-pad"
-                style={styles.inputMargin}
-              />
-              <Input
-                label="Certifications (Comma Separated)"
-                placeholder="e.g. ISO 9001, LEED Certified, B2B Verified"
-                value={certifications}
-                onChangeText={setCertifications}
-                style={styles.inputMargin}
-              />
-              <Input
-                label="Business Description & Overview"
-                placeholder="Describe your company services, specializations, and site capabilities..."
-                value={description}
-                onChangeText={setDescription}
-                multiline
-                numberOfLines={3}
+                label="GSTIN / Tax ID"
+                value={gstNumber}
+                onChangeText={setGstNumber}
+                autoCapitalize="characters"
                 style={styles.inputMargin}
               />
             </ScrollView>
@@ -409,6 +283,7 @@ export function AddressesScreen({ navigation }: any) {
   const { theme } = useTheme();
   const [addresses, setAddresses] = useState<SiteAddress[]>(INITIAL_ADDRESSES);
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<SiteAddress | null>(null);
 
   // Form State
   const [siteName, setSiteName] = useState('');
@@ -416,6 +291,7 @@ export function AddressesScreen({ navigation }: any) {
   const [city, setCity] = useState('');
   const [zipCode, setZipCode] = useState('');
   const [phone, setPhone] = useState('');
+  const [type, setType] = useState<'Home' | 'Work' | 'Site'>('Site');
   const [isDefault, setIsDefault] = useState(false);
 
   const resetForm = () => {
@@ -424,38 +300,97 @@ export function AddressesScreen({ navigation }: any) {
     setCity('');
     setZipCode('');
     setPhone('');
+    setType('Site');
     setIsDefault(false);
+    setEditingAddress(null);
   };
 
-  const handleAddAddress = () => {
+  const handleOpenAddModal = () => {
+    resetForm();
+    setModalVisible(true);
+  };
+
+  const handleOpenEditModal = (addr: SiteAddress) => {
+    setEditingAddress(addr);
+    setSiteName(addr.name);
+    setStreetAddress(addr.address);
+    setCity(addr.city);
+    setZipCode(addr.zipCode);
+    setPhone(addr.phone);
+    setType(addr.type || 'Site');
+    setIsDefault(addr.isDefault);
+    setModalVisible(true);
+  };
+
+  const handleSaveAddress = () => {
     if (!siteName.trim() || !streetAddress.trim() || !city.trim() || !phone.trim()) {
       Alert.alert('Required Fields', 'Please fill in Site Name, Address, City and Contact Phone.');
       return;
     }
 
-    const newAddr: SiteAddress = {
-      id: `addr-${Date.now()}`,
-      name: siteName.trim(),
-      address: streetAddress.trim(),
-      city: city.trim(),
-      zipCode: zipCode.trim() || '500001',
-      phone: phone.trim(),
-      isDefault: isDefault || addresses.length === 0,
-    };
+    if (editingAddress) {
+      // Edit existing
+      setAddresses((prev) =>
+        prev.map((a) => {
+          if (a.id === editingAddress.id) {
+            return {
+              ...a,
+              name: siteName.trim(),
+              address: streetAddress.trim(),
+              city: city.trim(),
+              zipCode: zipCode.trim() || '500001',
+              phone: phone.trim(),
+              type,
+              isDefault,
+            };
+          }
+          // If editing item set to default, unset others
+          if (isDefault) {
+            return { ...a, isDefault: false };
+          }
+          return a;
+        })
+      );
+    } else {
+      // Add new
+      const newAddr: SiteAddress = {
+        id: `addr-${Date.now()}`,
+        name: siteName.trim(),
+        address: streetAddress.trim(),
+        city: city.trim(),
+        zipCode: zipCode.trim() || '500001',
+        phone: phone.trim(),
+        type,
+        isDefault: isDefault || addresses.length === 0,
+      };
 
-    setAddresses((prev) => {
-      if (newAddr.isDefault) {
-        return [newAddr, ...prev.map((a) => ({ ...a, isDefault: false }))];
-      }
-      return [newAddr, ...prev];
-    });
+      setAddresses((prev) => {
+        if (newAddr.isDefault) {
+          return [newAddr, ...prev.map((a) => ({ ...a, isDefault: false }))];
+        }
+        return [newAddr, ...prev];
+      });
+    }
 
     resetForm();
     setModalVisible(false);
   };
 
-  const handleDeleteAddress = (id: string) => {
-    setAddresses((prev) => prev.filter((a) => a.id !== id));
+  const handleDeleteAddressPrompt = (id: string) => {
+    Alert.alert(
+      'Delete Address',
+      'Are you sure you want to delete this saved delivery site address?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setAddresses((prev) => prev.filter((a) => a.id !== id));
+          },
+        },
+      ]
+    );
   };
 
   const handleSetDefault = (id: string) => {
@@ -472,41 +407,52 @@ export function AddressesScreen({ navigation }: any) {
       <Header title="Saved Addresses" showBack onBackPress={() => navigation.goBack()} />
 
       <View style={{ padding: 16 }}>
-        {/* Add Address Button */}
         <Button
-          title="+ Add New Site Address"
-          onPress={() => setModalVisible(true)}
+          title="+ Add New Delivery Address"
+          onPress={handleOpenAddModal}
           size="md"
           variant="primary"
           style={{ marginBottom: 16 }}
         />
 
-        {/* Addresses List */}
         {addresses.map((item) => (
           <Card key={item.id} variant="outlined" style={styles.addressCard}>
             <View style={styles.addressHeaderRow}>
               <View style={{ flex: 1 }}>
                 <View style={styles.titleBadgeRow}>
                   <Text style={[styles.addressTitle, { color: theme.colors.navy }]}>{item.name}</Text>
+                  <View style={styles.tagChip}>
+                    <Text style={styles.tagChipText}>{item.type || 'Site'}</Text>
+                  </View>
                   {item.isDefault && (
-                    <Badge label="DEFAULT" variant="primary" size="sm" style={{ marginLeft: 8 }} />
+                    <Badge label="DEFAULT" variant="primary" size="sm" style={{ marginLeft: 6 }} />
                   )}
                 </View>
                 <Text style={[styles.addressText, { color: theme.colors.textSecondary }]}>
                   {item.address}, {item.city} - {item.zipCode}
                 </Text>
                 <Text style={[styles.addressPhone, { color: theme.colors.textTertiary }]}>
-                  Contact: {item.phone}
+                  📞 Contact: {item.phone}
                 </Text>
               </View>
 
-              <TouchableOpacity
-                onPress={() => handleDeleteAddress(item.id)}
-                style={styles.deleteBtn}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="trash-outline" size={18} color={theme.colors.danger} />
-              </TouchableOpacity>
+              <View style={styles.addressActionIcons}>
+                <TouchableOpacity
+                  onPress={() => handleOpenEditModal(item)}
+                  style={styles.actionIconBtn}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="pencil" size={16} color={theme.colors.primary} />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => handleDeleteAddressPrompt(item.id)}
+                  style={styles.actionIconBtn}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="trash-outline" size={16} color={theme.colors.danger} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {!item.isDefault && (
@@ -515,7 +461,7 @@ export function AddressesScreen({ navigation }: any) {
                 style={styles.setDefaultBtn}
                 activeOpacity={0.7}
               >
-                <Ionicons name="checkmark-circle-outline" size={16} color={theme.colors.primary} />
+                <Ionicons name="checkmark-circle-outline" size={15} color={theme.colors.primary} />
                 <Text style={[styles.setDefaultText, { color: theme.colors.primary }]}>Set as Default Site</Text>
               </TouchableOpacity>
             )}
@@ -523,7 +469,7 @@ export function AddressesScreen({ navigation }: any) {
         ))}
       </View>
 
-      {/* Add New Site Address Modal */}
+      {/* Add / Edit Address Modal */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -534,37 +480,37 @@ export function AddressesScreen({ navigation }: any) {
           <View style={[styles.modalCard, { backgroundColor: theme.colors.surface }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
-                Add New Site Address
+                {editingAddress ? 'Edit Delivery Address' : 'Add New Site Address'}
               </Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
                 <Ionicons name="close-circle" size={24} color={theme.colors.textTertiary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 440 }}>
               <Input
-                label="Site / Project Name"
-                placeholder="e.g. Site B - Highrise Project"
+                label="Location / Site Label *"
+                placeholder="e.g. Site B - Highrise Project / Home"
                 value={siteName}
                 onChangeText={setSiteName}
                 style={styles.inputMargin}
               />
               <Input
-                label="Full Street Address"
+                label="Full Street Address *"
                 placeholder="e.g. Plot 102, Phase 4, Financial District"
                 value={streetAddress}
                 onChangeText={setStreetAddress}
                 style={styles.inputMargin}
               />
               <Input
-                label="City / Region"
+                label="City & State *"
                 placeholder="e.g. Hyderabad, Telangana"
                 value={city}
                 onChangeText={setCity}
                 style={styles.inputMargin}
               />
               <Input
-                label="Pin Code / Postal Code"
+                label="Pincode / Postal Code"
                 placeholder="e.g. 500032"
                 value={zipCode}
                 onChangeText={setZipCode}
@@ -572,13 +518,40 @@ export function AddressesScreen({ navigation }: any) {
                 style={styles.inputMargin}
               />
               <Input
-                label="Site Manager Phone"
+                label="Contact Mobile Number *"
                 placeholder="e.g. +91 9876543210"
                 value={phone}
                 onChangeText={setPhone}
                 keyboardType="phone-pad"
                 style={styles.inputMargin}
               />
+
+              <Text style={[styles.fieldLabel, { color: theme.colors.textPrimary }]}>Address Tag</Text>
+              <View style={styles.tagSelectorRow}>
+                {(['Site', 'Work', 'Home'] as const).map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    onPress={() => setType(t)}
+                    style={[
+                      styles.typeChip,
+                      {
+                        backgroundColor: type === t ? `${theme.colors.primary}20` : theme.colors.surfaceVariant,
+                        borderColor: type === t ? theme.colors.primary : theme.colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: type === t ? 'Poppins_600SemiBold' : 'Inter_500Medium',
+                        fontSize: 12,
+                        color: type === t ? theme.colors.navy : theme.colors.textSecondary,
+                      }}
+                    >
+                      {t}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
               <TouchableOpacity
                 onPress={() => setIsDefault(!isDefault)}
@@ -605,8 +578,8 @@ export function AddressesScreen({ navigation }: any) {
                 style={{ flex: 1, marginRight: 8 }}
               />
               <Button
-                title="Save Address"
-                onPress={handleAddAddress}
+                title={editingAddress ? 'Update Address' : 'Save Address'}
+                onPress={handleSaveAddress}
                 variant="primary"
                 size="md"
                 style={{ flex: 1, marginLeft: 8 }}
@@ -662,10 +635,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     marginBottom: 4,
+    gap: 6,
   },
   addressTitle: {
     fontFamily: 'Poppins_600SemiBold',
     fontSize: 15,
+  },
+  tagChip: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  tagChipText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 10,
+    color: '#64748B',
   },
   addressText: {
     fontFamily: 'Inter_400Regular',
@@ -678,15 +663,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
-  deleteBtn: {
+  addressActionIcons: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  actionIconBtn: {
     padding: 6,
-    marginLeft: 8,
   },
   setDefaultBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 10,
+    marginTop: 10,
+    paddingTop: 8,
     borderTopWidth: 0.5,
     borderTopColor: '#E2E8F0',
     gap: 6,
@@ -695,7 +683,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12,
   },
-  // Modal Styles
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
@@ -711,8 +698,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-    paddingBottom: 12,
+    marginBottom: 14,
+    paddingBottom: 10,
     borderBottomWidth: 0.5,
     borderBottomColor: '#E2E8F0',
   },
@@ -723,10 +710,26 @@ const styles = StyleSheet.create({
   inputMargin: {
     marginBottom: 12,
   },
+  fieldLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12.5,
+    marginBottom: 6,
+  },
+  tagSelectorRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  typeChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
   checkboxRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 12,
+    marginVertical: 10,
     gap: 10,
   },
   checkboxLabel: {
@@ -735,6 +738,6 @@ const styles = StyleSheet.create({
   },
   modalActionRow: {
     flexDirection: 'row',
-    marginTop: 16,
+    marginTop: 14,
   },
 });

@@ -81,9 +81,13 @@ export const authApi = {
       );
     }
 
+    const identifier = (data as any).identifier || data.phone;
     return apiClient.post<ApiResponse<SendOtpResponse>>(
       API_ENDPOINTS.AUTH.SEND_OTP,
-      data
+      {
+        identifier,
+        purpose: 'LOGIN',
+      }
     );
   },
 
@@ -92,7 +96,7 @@ export const authApi = {
    * POST /api/auth/verify-otp
    */
   verifyOtp: async (
-    data: VerifyOtpRequest
+    data: VerifyOtpRequest & { identifier?: string; otpCode?: string }
   ): Promise<AxiosResponse<ApiResponse<VerifyOtpResponse>>> => {
     if (AUTH_CONFIG.developmentMode) {
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -145,10 +149,65 @@ export const authApi = {
       );
     }
 
-    return apiClient.post<ApiResponse<VerifyOtpResponse>>(
+    const identifier = data.identifier || data.phone;
+    const otpCode = data.otpCode || data.otp;
+    const response = await apiClient.post<any>(
       API_ENDPOINTS.AUTH.VERIFY_OTP,
-      data
+      {
+        identifier,
+        otpCode,
+        purpose: 'LOGIN',
+      }
     );
+
+    // Map backend user object if returned in data
+    if (response.data && response.data.data) {
+      const resData = response.data.data;
+      if (resData.accessToken && resData.user) {
+        const rawUser = resData.user;
+        const fullName = rawUser.fullName || 'Valued Customer';
+        const nameParts = fullName.split(' ');
+        const firstName = nameParts[0] || 'Valued';
+        const lastName = nameParts.slice(1).join(' ') || 'Customer';
+
+        const mappedUser: User = {
+          id: String(rawUser.id),
+          phone: rawUser.phone || '',
+          email: rawUser.email || null,
+          firstName,
+          lastName,
+          fullName,
+          accountType: rawUser.role === 'BUYER' ? 'business' : 'individual',
+          businessProfile: rawUser.buyerProfile ? {
+            companyName: rawUser.buyerProfile.companyName || 'Apex Infra Projects Pvt Ltd',
+            gstNumber: rawUser.buyerProfile.gstin,
+          } : { companyName: rawUser.companyName || 'Apex Infra Projects Pvt Ltd' },
+          isVerified: true,
+          isPhoneVerified: true,
+          isEmailVerified: !!rawUser.email,
+          createdAt: rawUser.createdAt || new Date().toISOString(),
+          updatedAt: rawUser.createdAt || new Date().toISOString(),
+        };
+
+        const existingResponse: ExistingUserAuthResponse = {
+          success: true,
+          isNewUser: false,
+          accessToken: resData.accessToken,
+          refreshToken: resData.refreshToken,
+          user: mappedUser,
+        };
+
+        return {
+          ...response,
+          data: {
+            ...response.data,
+            data: existingResponse as any,
+          },
+        };
+      }
+    }
+
+    return response;
   },
 
   /**

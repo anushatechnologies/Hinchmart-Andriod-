@@ -1,30 +1,44 @@
 /**
- * HINCH MART — Premium Profile Screen & Settings Screen
- * Enhanced gradient hero, elevated stats, accent-bar menu items, refined typography
+ * HINCH MART — Production Account / Profile Screen (Exact Approved Visual Reference)
+ * Reproduces the approved B2B Account UI reference:
+ * - Compact elevated Profile Card with top-right Pencil Edit Icon.
+ * - Yellow Avatar circle with dynamic Initials + Green checkmark badge.
+ * - Hierarchy: Name (20px bold) -> Company (14px medium) -> Email & Phone (13px).
+ * - Soft pill badges: Verified, GST Verified, Business/Vendor Account.
+ * - YOUR ACTIVITY: 4 compact cards in 1 row (Orders, RFQs, Saved, Reviews) without "View all" text.
+ * - Grouped Menu Cards: ACCOUNT & ORDERS, FINANCE & VENDORS, PREFERENCES, SUPPORT & LEGAL.
+ * - Red outlined Sign Out button with native Alert confirmation.
  */
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  Platform,
+  ScrollView,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../../theme';
 import { Screen, Header } from '../../../components/layout/Screen';
-import { Avatar } from '../../../components/ui/Badge';
-import { Badge } from '../../../components/ui/Badge';
 import { Card } from '../../../components/ui/Card';
-import { Button } from '../../../components/ui/Button';
-import { useAppDispatch, useAppSelector } from '../../../redux/hooks';
+import { useAppDispatch } from '../../../redux/hooks';
 import { authStore } from '../../../store/authStore';
-import { setThemeMode } from '../../../redux/slices/themeSlice';
+import { logout } from '../../../redux/slices/authSlice';
+import { useAccountSummary } from '../../../hooks/useAccountSummary';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// Icon colors for each menu group
+const BRAND_NAVY = '#0A2540';
+const BRAND_GOLD = '#F47B20';
 const ICON_TINTS = {
-  orders: '#3B82F6',
-  finance: '#10B981',
-  vendor: '#F59E0B',
-  settings: '#8B5CF6',
-  danger: '#EF4444',
+  blue: '#2563EB',
+  green: '#10B981',
+  amber: '#F59E0B',
+  purple: '#8B5CF6',
+  red: '#EF4444',
 };
 
 interface MenuItem {
@@ -35,102 +49,89 @@ interface MenuItem {
   subtitle?: string;
 }
 
-const ACCOUNT_MENU: MenuItem[] = [
-  { title: 'My Business Profile', icon: 'briefcase', screen: 'BusinessProfile', tint: ICON_TINTS.orders, subtitle: 'Company info & documents' },
-  { title: 'Order History', icon: 'receipt-outline', screen: 'OrderHistory', tint: ICON_TINTS.orders, subtitle: 'Track orders & invoices' },
-  { title: 'Saved Addresses', icon: 'location', screen: 'Addresses', tint: ICON_TINTS.orders, subtitle: 'Delivery locations' },
-];
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. YOUR ACTIVITY (EXACTLY 4 CARDS: ORDERS, RFQS, SAVED, REVIEWS)
+// ─────────────────────────────────────────────────────────────────────────────
+function QuickActivityStats({
+  ordersCount,
+  rfqsCount,
+  wishlistCount,
+  reviewsCount,
+  navigation,
+}: {
+  ordersCount: number;
+  rfqsCount: number;
+  wishlistCount: number;
+  reviewsCount: number;
+  navigation: any;
+}) {
+  const { theme } = useTheme();
 
-const FINANCE_MENU: MenuItem[] = [
-  { title: 'Business Wallet', icon: 'wallet', screen: 'Wallet', tint: ICON_TINTS.finance, subtitle: 'Balance & transactions' },
-  { title: 'Vendor Dashboard', icon: 'bar-chart', screen: 'VendorDashboard', tint: ICON_TINTS.vendor, subtitle: 'Sales analytics' },
-  { title: 'Equipment Rentals', icon: 'construct', screen: 'RentalList', tint: ICON_TINTS.vendor, subtitle: 'Manage active rentals' },
-];
-
-const PREFERENCES_MENU: MenuItem[] = [
-  { title: 'Language & Currency', icon: 'globe', screen: 'Language', tint: ICON_TINTS.settings },
-  { title: 'Settings & Security', icon: 'shield-checkmark', screen: 'Settings', tint: ICON_TINTS.settings },
-];
-
-const LEGAL_MENU: MenuItem[] = [
-  { title: 'Help & Support', icon: 'call', screen: 'HelpSupport', tint: ICON_TINTS.orders, subtitle: '+91 8388899999 / support@hinchmart.com' },
-  { title: 'Privacy Policy', icon: 'shield-checkmark-outline', screen: 'PrivacyPolicy', tint: ICON_TINTS.settings },
-  { title: 'About HINCH MART', icon: 'information-circle-outline', screen: 'About', tint: ICON_TINTS.vendor },
-  { title: 'Terms & Conditions', icon: 'document-text-outline', screen: 'Terms', tint: ICON_TINTS.finance },
-];
-
-// Profile Stats Card — Enhanced with interactive TouchableOpacity navigation
-function StatsRow({ theme, navigation }: { theme: any; navigation: any }) {
   const stats = [
-    { label: 'Orders', value: '24', icon: 'cube' as const, color: '#3B82F6', screen: 'OrderHistory' },
-    { label: 'RFQs', value: '8', icon: 'document-text' as const, color: '#F59E0B', screen: 'RFQList' },
-    { label: 'Saved', value: '15', icon: 'heart' as const, color: '#EF4444', screen: 'ProductList' },
-    { label: 'Reviews', value: '12', icon: 'star' as const, color: '#10B981', screen: 'OrderHistory' },
+    {
+      title: 'Orders',
+      count: ordersCount,
+      icon: 'cube-outline' as const,
+      color: ICON_TINTS.blue,
+      screen: 'OrderHistory',
+    },
+    {
+      title: 'RFQs',
+      count: rfqsCount,
+      icon: 'document-text-outline' as const,
+      color: ICON_TINTS.amber,
+      screen: 'RFQList',
+    },
+    {
+      title: 'Saved',
+      count: wishlistCount,
+      icon: 'heart-outline' as const,
+      color: ICON_TINTS.red,
+      screen: 'Wishlist',
+    },
+    {
+      title: 'Reviews',
+      count: reviewsCount,
+      icon: 'star-outline' as const,
+      color: ICON_TINTS.purple,
+      screen: 'OrderHistory',
+    },
   ];
 
   return (
-    <View style={statsStyles.row}>
-      {stats.map((stat, idx) => (
-        <TouchableOpacity
-          key={idx}
-          onPress={() => navigation.navigate(stat.screen)}
-          activeOpacity={0.75}
-          style={[
-            statsStyles.statItem,
-            {
-              backgroundColor: theme.colors.cardBackground,
-              ...(Platform.OS === 'ios'
-                ? { shadowColor: stat.color, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 }
-                : { elevation: 2 }),
-            },
-          ]}
-        >
-          <View style={[statsStyles.statIconBg, { backgroundColor: `${stat.color}18` }]}>
-            <Ionicons name={stat.icon} size={18} color={stat.color} />
-          </View>
-          <Text style={[statsStyles.statValue, { color: theme.colors.textPrimary }]}>{stat.value}</Text>
-          <Text style={[statsStyles.statLabel, { color: theme.colors.textTertiary }]}>{stat.label}</Text>
-        </TouchableOpacity>
-      ))}
+    <View style={s.section}>
+      <Text style={s.sectionTitle}>YOUR ACTIVITY</Text>
+      <View style={s.statsGrid}>
+        {stats.map((stat, idx) => (
+          <TouchableOpacity
+            key={idx}
+            onPress={() => navigation.navigate(stat.screen)}
+            activeOpacity={0.75}
+            style={[
+              s.statCard,
+              {
+                backgroundColor: theme.colors.cardBackground,
+                borderColor: theme.colors.cardBorder,
+              },
+            ]}
+          >
+            <View style={[s.statIconBg, { backgroundColor: `${stat.color}14` }]}>
+              <Ionicons name={stat.icon} size={20} color={stat.color} />
+            </View>
+            <Text style={[s.statCount, { color: theme.colors.textPrimary }]}>{stat.count}</Text>
+            <Text style={[s.statLabel, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+              {stat.title}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
   );
 }
 
-const statsStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 16,
-    gap: 8,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderRadius: 16,
-  },
-  statIconBg: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  statValue: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 17,
-  },
-  statLabel: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    marginTop: 2,
-  },
-});
-
-// Menu Group Card — Clean alignment with left accent indicator
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. REUSABLE MENU GROUP COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
 function MenuGroup({
   items,
   navigation,
@@ -142,35 +143,34 @@ function MenuGroup({
   theme: any;
   label: string;
 }) {
+  if (!items || items.length === 0) return null;
+
   return (
-    <View style={menuStyles.group}>
-      <Text style={[menuStyles.groupLabel, { color: theme.colors.textTertiary }]}>{label}</Text>
-      <View style={[menuStyles.card, { backgroundColor: theme.colors.cardBackground, borderColor: theme.colors.cardBorder }]}>
+    <View style={s.section}>
+      <Text style={s.sectionTitle}>{label}</Text>
+      <View style={[s.menuCard, { backgroundColor: theme.colors.cardBackground, borderColor: theme.colors.cardBorder }]}>
         {items.map((item, idx) => (
           <TouchableOpacity
             key={idx}
             onPress={() => navigation.navigate(item.screen)}
             style={[
-              menuStyles.row,
+              s.menuRow,
               idx < items.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: theme.colors.border },
             ]}
-            activeOpacity={0.6}
+            activeOpacity={0.65}
           >
-            {/* Left accent bar on card edge */}
-            <View style={[menuStyles.accentBar, { backgroundColor: item.tint }]} />
-
-            <View style={[menuStyles.iconCircle, { backgroundColor: `${item.tint}14` }]}>
-              <Ionicons name={item.icon} size={18} color={item.tint} />
+            <View style={[s.menuIconCircle, { backgroundColor: `${item.tint}14` }]}>
+              <Ionicons name={item.icon} size={20} color={item.tint} />
             </View>
-            <View style={menuStyles.textCol}>
-              <Text style={[menuStyles.title, { color: theme.colors.textPrimary }]}>{item.title}</Text>
+            <View style={s.menuTextCol}>
+              <Text style={[s.menuTitle, { color: theme.colors.textPrimary }]}>{item.title}</Text>
               {item.subtitle && (
-                <Text style={[menuStyles.subtitle, { color: theme.colors.textTertiary }]}>{item.subtitle}</Text>
+                <Text style={[s.menuSubtitle, { color: theme.colors.textTertiary }]} numberOfLines={1}>
+                  {item.subtitle}
+                </Text>
               )}
             </View>
-            <View style={[menuStyles.chevronCircle, { backgroundColor: `${theme.colors.textTertiary}12` }]}>
-              <Ionicons name="chevron-forward" size={14} color={theme.colors.textTertiary} />
-            </View>
+            <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
           </TouchableOpacity>
         ))}
       </View>
@@ -178,280 +178,323 @@ function MenuGroup({
   );
 }
 
-const menuStyles = StyleSheet.create({
-  group: {
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  groupLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  card: {
-    borderRadius: 18,
-    borderWidth: 0.5,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    position: 'relative',
-    direction: 'ltr',
-  },
-  accentBar: {
-    position: 'absolute',
-    left: 0,
-    top: 10,
-    bottom: 10,
-    width: 3.5,
-    borderTopRightRadius: 3,
-    borderBottomRightRadius: 3,
-  },
-  iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-    marginLeft: 4,
-  },
-  textCol: {
-    flex: 1,
-  },
-  title: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 15,
-  },
-  subtitle: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  chevronCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});
-
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. MAIN PROFILE SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
 export function ProfileScreen({ navigation }: any) {
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
-  const { user } = useAppSelector((state) => state.auth);
 
-  const name = user?.fullName || 'John Doe';
+  // Custom hook for user state & counts
+  const {
+    user,
+    ordersCount,
+    rfqsCount,
+    wishlistCount,
+    reviewsCount,
+    isLoading,
+    isRefreshing,
+    error,
+    isVendor,
+    hasGst,
+    refetch,
+  } = useAccountSummary();
+
+  // User Metadata
+  const name =
+    user?.fullName ||
+    `${user?.firstName || ''} ${user?.lastName || ''}`.trim() ||
+    'Rajesh Sharma';
   const company = user?.businessProfile?.companyName || 'Apex Construction Ltd';
-  const email = user?.email || 'john@apexconstruction.com';
+  const email = user?.email || 'rajesh.sharma@hinchmart.com';
+  const phone = user?.phone || '+91 98765 43210';
+  const isBusinessRole = user?.accountType === 'business' || user?.accountType === 'contractor' || true;
 
-  const gradientColors = isDark
-    ? ['#152238', '#1C2A42', '#243352'] as const
-    : ['#152238', '#1A3050', '#223D60'] as const;
+  // Generate Initials (e.g. Rajesh Sharma -> RS)
+  const initials = (() => {
+    const parts = name.trim().split(' ');
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  })();
 
-  const handleSignOut = async () => {
-    await authStore.logout();
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Login' }],
-    });
+  // Categorized Menus
+  const accountMenu: MenuItem[] = [
+    {
+      title: 'Business Profile',
+      icon: 'business-outline',
+      screen: 'BusinessProfile',
+      tint: ICON_TINTS.blue,
+      subtitle: 'Manage company info & GST details',
+    },
+    {
+      title: 'Order History',
+      icon: 'receipt-outline',
+      screen: 'OrderHistory',
+      tint: ICON_TINTS.amber,
+      subtitle: 'Track active orders & invoices',
+    },
+    {
+      title: 'Saved Addresses',
+      icon: 'location-outline',
+      screen: 'Addresses',
+      tint: ICON_TINTS.purple,
+      subtitle: 'Manage delivery locations',
+    },
+  ];
+
+  const financeVendorMenu: MenuItem[] = [
+    {
+      title: 'Business Wallet',
+      icon: 'wallet-outline',
+      screen: 'Wallet',
+      tint: ICON_TINTS.green,
+      subtitle: 'Account balance & credit limits',
+    },
+    ...(isVendor
+      ? [
+          {
+            title: 'Vendor Dashboard',
+            icon: 'bar-chart-outline' as const,
+            screen: 'VendorDashboard',
+            tint: ICON_TINTS.amber,
+            subtitle: 'Sales analytics, bids & listings',
+          },
+        ]
+      : []),
+    {
+      title: 'Equipment Rentals',
+      icon: 'construct-outline',
+      screen: 'RentalList',
+      tint: ICON_TINTS.amber,
+      subtitle: 'Heavy machinery fleet rentals',
+    },
+  ];
+
+  const preferencesMenu: MenuItem[] = [
+    {
+      title: 'Language & Currency',
+      icon: 'globe-outline',
+      screen: 'Language',
+      tint: ICON_TINTS.purple,
+      subtitle: 'Choose your language and currency',
+    },
+    {
+      title: 'Settings & Security',
+      icon: 'shield-checkmark-outline',
+      screen: 'Settings',
+      tint: ICON_TINTS.purple,
+      subtitle: 'Account, password & security',
+    },
+  ];
+
+  const helpLegalMenu: MenuItem[] = [
+    {
+      title: 'Help & Support',
+      icon: 'headset-outline',
+      screen: 'HelpSupport',
+      tint: ICON_TINTS.blue,
+      subtitle: 'Contact HINCH MART support',
+    },
+    {
+      title: 'Privacy Policy',
+      icon: 'shield-outline',
+      screen: 'PrivacyPolicy',
+      tint: ICON_TINTS.purple,
+    },
+    {
+      title: 'About HINCH MART',
+      icon: 'information-circle-outline',
+      screen: 'About',
+      tint: ICON_TINTS.amber,
+    },
+    {
+      title: 'Terms & Conditions',
+      icon: 'document-text-outline',
+      screen: 'Terms',
+      tint: ICON_TINTS.green,
+    },
+  ];
+
+  const handleSignOutPrompt = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out of your HINCH MART account?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            await authStore.logout();
+            dispatch(logout());
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            });
+          },
+        },
+      ]
+    );
   };
 
+  const bottomPadding = Math.max(insets.bottom + 120, 140);
+
   return (
-    <Screen scrollable>
-      <Header
-        title="My Account"
-        showBack={false}
-      />
+    <Screen scrollable={false}>
+      {/* Header: Logo + My Account */}
+      <Header title="My Account" showBack={false} />
 
-      {/* Profile Hero Card with Gradient */}
-      <View style={pStyles.heroCard}>
-        <LinearGradient
-          colors={gradientColors}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={pStyles.gradientBg}
-        >
-          {/* Gold accent stripe */}
-          <View style={pStyles.heroAccentStripe} />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[s.scrollContent, { paddingBottom: bottomPadding }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refetch}
+            tintColor={BRAND_GOLD}
+            colors={[BRAND_GOLD]}
+          />
+        }
+      >
+        {/* Loading State */}
+        {isLoading && !isRefreshing && (
+          <View style={s.loadingBox}>
+            <ActivityIndicator size="small" color={BRAND_GOLD} />
+            <Text style={[s.loadingText, { color: theme.colors.textSecondary }]}>
+              Refreshing account details...
+            </Text>
+          </View>
+        )}
 
-          <View style={pStyles.heroRow}>
-            <View style={pStyles.avatarRing}>
-              <Avatar name={name} size={64} />
+        {/* Error Banner */}
+        {error && (
+          <TouchableOpacity onPress={refetch} style={s.errorBanner} activeOpacity={0.8}>
+            <Ionicons name="alert-circle" size={18} color="#EF4444" />
+            <Text style={s.errorText}>{error} Tap to retry.</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* ── 1. APPROVED COMPACT PROFILE CARD ───────────────────────────────── */}
+        <Card variant="outlined" style={s.compactHeroCard}>
+          {/* Top-Right Pencil Edit Button */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('EditProfile')}
+            style={s.pencilEditBtn}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="pencil-outline" size={18} color="#475569" />
+          </TouchableOpacity>
+
+          <View style={s.compactHeroRow}>
+            {/* Yellow Initials Avatar with Green Verification Badge */}
+            <View style={s.avatarWrap}>
+              <View style={s.initialsCircle}>
+                <Text style={s.initialsText}>{initials}</Text>
+              </View>
+              <View style={s.avatarVerifiedBadge}>
+                <Ionicons name="checkmark-sharp" size={9} color="#FFFFFF" />
+              </View>
             </View>
-            <View style={pStyles.heroMeta}>
-              <Text style={pStyles.heroName}>{name}</Text>
-              <Text style={pStyles.heroCompany}>{company}</Text>
-              <Text style={pStyles.heroEmail}>{email}</Text>
+
+            {/* Profile Meta Info */}
+            <View style={s.compactHeroMeta}>
+              <Text style={[s.userName, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+                {name}
+              </Text>
+
+              {company ? (
+                <View style={s.metaRow}>
+                  <Ionicons name="business-outline" size={13} color="#64748B" />
+                  <Text style={[s.userCompanyText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                    {company}
+                  </Text>
+                </View>
+              ) : null}
+
+              {email ? (
+                <View style={s.metaRow}>
+                  <Ionicons name="mail-outline" size={13} color="#64748B" />
+                  <Text style={[s.contactText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                    {email}
+                  </Text>
+                </View>
+              ) : null}
+
+              {phone ? (
+                <View style={s.metaRow}>
+                  <Ionicons name="call-outline" size={13} color="#64748B" />
+                  <Text style={[s.contactText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                    {phone}
+                  </Text>
+                </View>
+              ) : null}
             </View>
-            <TouchableOpacity
-              style={pStyles.editBtn}
-              onPress={() => navigation.navigate('BusinessProfile', { openEdit: true })}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="create-outline" size={18} color="#FDB913" />
-            </TouchableOpacity>
           </View>
 
-          <View style={pStyles.badgeRow}>
-            <Badge label="VERIFIED B2B BUYER" variant="success" size="sm" />
-            <View style={pStyles.memberChip}>
-              <Ionicons name="diamond" size={12} color="#FDB913" />
-              <Text style={pStyles.memberText}>Gold Member</Text>
+          {/* Status Badges Row — STRICT SINGLE HORIZONTAL LINE */}
+          <View style={s.badgesRow}>
+            <View style={[s.pillBadge, { backgroundColor: '#DCFCE7' }]}>
+              <Ionicons name="checkmark" size={10} color="#15803D" />
+              <Text numberOfLines={1} style={[s.pillBadgeText, { color: '#15803D' }]}>Verified</Text>
+            </View>
+
+            <View style={[s.pillBadge, { backgroundColor: '#FEF3C7' }]}>
+              <Ionicons name="checkmark" size={10} color="#B45309" />
+              <Text numberOfLines={1} style={[s.pillBadgeText, { color: '#B45309' }]}>GST Verified</Text>
+            </View>
+
+            <View style={[s.pillBadge, { backgroundColor: '#DBEAFE' }]}>
+              <Ionicons name="checkmark" size={10} color="#1D4ED8" />
+              <Text numberOfLines={1} style={[s.pillBadgeText, { color: '#1D4ED8' }]}>
+                {isVendor ? 'Vendor Account' : 'Business Account'}
+              </Text>
             </View>
           </View>
-        </LinearGradient>
-      </View>
+        </Card>
 
-      {/* Stats Row */}
-      <StatsRow theme={theme} navigation={navigation} />
+        {/* ── 2. YOUR ACTIVITY (4 CARDS: ORDERS, RFQS, SAVED, REVIEWS) ───────── */}
+        <QuickActivityStats
+          ordersCount={ordersCount}
+          rfqsCount={rfqsCount}
+          wishlistCount={wishlistCount}
+          reviewsCount={reviewsCount}
+          navigation={navigation}
+        />
 
-      {/* Menu Groups */}
-      <MenuGroup label="Account & Orders" items={ACCOUNT_MENU} navigation={navigation} theme={theme} />
-      <MenuGroup label="Finance & Vendors" items={FINANCE_MENU} navigation={navigation} theme={theme} />
-      <MenuGroup label="Preferences" items={PREFERENCES_MENU} navigation={navigation} theme={theme} />
-      <MenuGroup label="Support & Legal" items={LEGAL_MENU} navigation={navigation} theme={theme} />
+        {/* ── 3. MENU GROUPS ─────────────────────────────────────────────────── */}
+        <MenuGroup label="ACCOUNT & ORDERS" items={accountMenu} navigation={navigation} theme={theme} />
+        <MenuGroup label="FINANCE & VENDORS" items={financeVendorMenu} navigation={navigation} theme={theme} />
+        <MenuGroup label="PREFERENCES" items={preferencesMenu} navigation={navigation} theme={theme} />
+        <MenuGroup label="SUPPORT & LEGAL" items={helpLegalMenu} navigation={navigation} theme={theme} />
 
-      {/* Sign Out */}
-      <View style={pStyles.logoutSection}>
-        <TouchableOpacity
-          onPress={handleSignOut}
-          style={[pStyles.logoutBtn, { borderColor: `${ICON_TINTS.danger}40`, backgroundColor: `${ICON_TINTS.danger}08` }]}
-          activeOpacity={0.6}
-        >
-          <Ionicons name="log-out-outline" size={20} color={ICON_TINTS.danger} />
-          <Text style={[pStyles.logoutText, { color: ICON_TINTS.danger }]}>Sign Out</Text>
-        </TouchableOpacity>
+        {/* ── 4. SIGN OUT BUTTON ─────────────────────────────────────────────── */}
+        <View style={s.signOutWrap}>
+          <TouchableOpacity
+            onPress={handleSignOutPrompt}
+            style={s.signOutBtn}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="log-out-outline" size={18} color="#EF4444" />
+            <Text style={s.signOutText}>Sign Out</Text>
+          </TouchableOpacity>
 
-        <Text style={[pStyles.versionText, { color: theme.colors.textTertiary }]}>
-          HINCH MART v1.0.0
-        </Text>
-      </View>
+          <Text style={[s.appVersionText, { color: theme.colors.textTertiary }]}>
+            HINCH MART v1.0.0 (Build 104)
+          </Text>
+        </View>
+      </ScrollView>
     </Screen>
   );
 }
 
-const pStyles = StyleSheet.create({
-  heroCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 22,
-    overflow: 'hidden',
-    ...(Platform.OS === 'ios'
-      ? { shadowColor: '#152238', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 16 }
-      : { elevation: 6 }),
-  },
-  gradientBg: {
-    padding: 22,
-    overflow: 'hidden',
-  },
-  heroAccentStripe: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    backgroundColor: '#FDB913',
-  },
-  heroRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    direction: 'ltr',
-  },
-  avatarRing: {
-    borderWidth: 2.5,
-    borderColor: 'rgba(253, 185, 19, 0.6)',
-    borderRadius: 36,
-    padding: 2,
-  },
-  heroMeta: {
-    marginLeft: 14,
-    flex: 1,
-  },
-  heroName: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 20,
-    color: '#FFFFFF',
-  },
-  heroCompany: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginTop: 2,
-  },
-  heroEmail: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.5)',
-    marginTop: 2,
-  },
-  editBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
-    backgroundColor: 'rgba(253, 185, 19, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 16,
-    gap: 10,
-    direction: 'ltr',
-  },
-  memberChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(253, 185, 19, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 4,
-  },
-  memberText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11,
-    color: '#FDB913',
-  },
-  logoutSection: {
-    paddingHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 40,
-    alignItems: 'center',
-  },
-  logoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 14,
-    borderWidth: 1,
-    width: '100%',
-    gap: 8,
-  },
-  logoutText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 15,
-  },
-  versionText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    marginTop: 16,
-  },
-});
-
+// ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS SCREEN EXPORT
+// ─────────────────────────────────────────────────────────────────────────────
 export function SettingsScreen({ navigation }: any) {
   const { theme, themeMode, toggleTheme } = useTheme();
-  const dispatch = useAppDispatch();
 
   const themeOptions = [
     { mode: 'light', icon: 'sunny' as const, label: 'Light' },
@@ -461,12 +504,12 @@ export function SettingsScreen({ navigation }: any) {
 
   return (
     <Screen scrollable>
-      <Header title="Settings" showBack onBackPress={() => navigation.goBack()} />
+      <Header title="Settings & Security" showBack onBackPress={() => navigation.goBack()} />
 
       <View style={{ padding: 16 }}>
-        <Card variant="outlined" style={{ padding: 16, marginBottom: 16 }}>
-          <Text style={{ fontFamily: 'Poppins_600SemiBold', fontSize: 16, marginBottom: 14, color: theme.colors.textPrimary }}>
-            Appearance
+        <Card variant="outlined" style={{ padding: 16, marginBottom: 16, borderRadius: 16 }}>
+          <Text style={{ fontFamily: 'Poppins_600SemiBold', fontSize: 15, marginBottom: 14, color: theme.colors.textPrimary }}>
+            Appearance Theme
           </Text>
 
           <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -474,7 +517,6 @@ export function SettingsScreen({ navigation }: any) {
               <TouchableOpacity
                 key={opt.mode}
                 onPress={() => {
-                  dispatch(setThemeMode(opt.mode as any));
                   toggleTheme();
                 }}
                 style={{
@@ -508,3 +550,250 @@ export function SettingsScreen({ navigation }: any) {
     </Screen>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STYLESHEET
+// ─────────────────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  scrollContent: {
+    padding: 16,
+  },
+  loadingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  loadingText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 14,
+    gap: 8,
+  },
+  errorText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    color: '#EF4444',
+    flex: 1,
+  },
+
+  /* ── 1. Compact Hero Profile Card (Matches Reference Screenshot) ── */
+  compactHeroCard: {
+    padding: 18,
+    borderRadius: 20,
+    marginBottom: 18,
+    backgroundColor: '#FFFFFF',
+    position: 'relative',
+    ...Platform.select({
+      ios: { shadowColor: '#0F172A', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.05, shadowRadius: 8 },
+      android: { elevation: 2 },
+    }),
+  },
+  pencilEditBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  compactHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarWrap: {
+    position: 'relative',
+  },
+  initialsCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#FDE68A',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  initialsText: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 24,
+    color: '#D97706',
+  },
+  avatarVerifiedBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  compactHeroMeta: {
+    marginLeft: 16,
+    flex: 1,
+    paddingRight: 24,
+  },
+  userName: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 20,
+    lineHeight: 24,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 6,
+  },
+  userCompanyText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13.5,
+    flexShrink: 1,
+  },
+  contactText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12.5,
+    flexShrink: 1,
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 12,
+  },
+  pillBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
+    borderRadius: 10,
+    gap: 3,
+    flexShrink: 1,
+  },
+  pillBadgeText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 10.5,
+  },
+
+  /* ── 2. Sections ── */
+  section: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 13,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: '#64748B',
+    marginBottom: 10,
+    marginLeft: 2,
+  },
+
+  /* Stats Grid (4 cards in 1 row, matching reference) */
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  statCard: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  statIconBg: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  statCount: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 18,
+    lineHeight: 22,
+  },
+  statLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+
+  /* Menu Groups */
+  menuCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 70,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  menuIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  menuTextCol: {
+    flex: 1,
+  },
+  menuTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 15,
+  },
+  menuSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  /* Sign Out */
+  signOutWrap: {
+    marginTop: 6,
+    alignItems: 'center',
+  },
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
+    width: '100%',
+    gap: 8,
+  },
+  signOutText: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 14,
+    color: '#EF4444',
+  },
+  appVersionText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11.5,
+    marginTop: 12,
+  },
+});

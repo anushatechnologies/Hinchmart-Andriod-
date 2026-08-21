@@ -11,7 +11,7 @@ export const AUTH_CONFIG = {
    * Set to `true` for frontend-only development mode using manual OTP.
    * Set to `false` in production or when connecting to real backend OTP endpoints.
    */
-  developmentMode: true,
+  developmentMode: process.env.EXPO_PUBLIC_USE_MOCK_AUTH === 'true',
 
   /**
    * Manual fixed OTP code accepted during development.

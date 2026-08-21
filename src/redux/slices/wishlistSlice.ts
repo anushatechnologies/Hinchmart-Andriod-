@@ -23,6 +23,9 @@ const wishlistSlice = createSlice({
         state.productIds.push(action.payload);
       }
     },
+    removeFromWishlist: (state, action: PayloadAction<string>) => {
+      state.productIds = state.productIds.filter((id) => id !== action.payload);
+    },
     setWishlist: (state, action: PayloadAction<string[]>) => {
       state.productIds = action.payload;
     },
@@ -32,10 +35,12 @@ const wishlistSlice = createSlice({
   },
 });
 
-export const { toggleWishlist, setWishlist, clearWishlist } = wishlistSlice.actions;
+export const { toggleWishlist, removeFromWishlist, setWishlist, clearWishlist } = wishlistSlice.actions;
 
 export const selectIsWishlisted = (productId: string) => (state: { wishlist: WishlistState }) =>
   state.wishlist.productIds.includes(productId);
+export const selectWishlistItems = (state: { wishlist: WishlistState }): string[] =>
+  state.wishlist.productIds;
 export const selectWishlistCount = (state: { wishlist: WishlistState }) =>
   state.wishlist.productIds.length;
 

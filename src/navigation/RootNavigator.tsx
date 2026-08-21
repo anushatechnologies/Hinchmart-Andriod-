@@ -16,21 +16,35 @@ import { LoginScreen } from '../features/auth/screens/LoginScreen';
 import { OTPScreen } from '../features/auth/screens/OTPScreen';
 import { RegistrationDetailsScreen } from '../features/auth/screens/RegistrationDetailsScreen';
 
-// Product screens
+// Product & Search screens
 import { ProductListScreen } from '../features/products/screens/ProductListScreen';
 import { ProductDetailScreen } from '../features/products/screens/ProductDetailScreen';
 import { SearchScreen } from '../features/search/screens/SearchScreen';
 
-// Checkout & Orders
-import { CheckoutAddressScreen, CheckoutPaymentScreen, OrderSuccessScreen } from '../features/checkout/screens/CheckoutAddressScreen';
-import { OrderHistoryScreen, OrderDetailScreen, WalletScreen, RFQListScreen, RFQDetailScreen, RFQCreateScreen } from '../features/rfq/screens/RFQListScreen';
+// Checkout Flow
+import { CheckoutAddressScreen } from '../features/checkout/screens/CheckoutAddressScreen';
+import { CheckoutDeliveryScreen } from '../features/checkout/screens/CheckoutDeliveryScreen';
+import { CheckoutPaymentScreen } from '../features/checkout/screens/CheckoutPaymentScreen';
+import { CheckoutReviewScreen } from '../features/checkout/screens/CheckoutReviewScreen';
+import { OrderSuccessScreen } from '../features/checkout/screens/OrderSuccessScreen';
 
-// Profile
+// Orders & Live Tracking
+import { OrderHistoryScreen } from '../features/orders/screens/OrderHistoryScreen';
+import { OrderDetailScreen } from '../features/orders/screens/OrderDetailScreen';
+import { OrderTrackingScreen } from '../features/orders/screens/OrderTrackingScreen';
+
+// RFQ & Finance
+import { WalletScreen, RFQListScreen, RFQDetailScreen, RFQCreateScreen } from '../features/rfq/screens/RFQListScreen';
+
+// Profile & Saved
 import { SettingsScreen } from '../features/profile/screens/ProfileScreen';
+import { EditProfileScreen } from '../features/profile/screens/EditProfileScreen';
 import { BusinessProfileScreen, AddressesScreen } from '../features/profile/screens/BusinessProfileScreen';
+import { WishlistScreen } from '../features/profile/screens/WishlistScreen';
 import { LanguageCurrencyScreen } from '../features/profile/screens/LanguageCurrencyScreen';
 
 // Vendors & Rentals
+import { VendorListScreen } from '../features/vendors/screens/VendorListScreen';
 import { VendorDashboardScreen, VendorDetailScreen, RentalListScreen } from '../features/vendors/screens/VendorDashboardScreen';
 
 // Notifications & Content
@@ -61,27 +75,34 @@ export function RootNavigator() {
         <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
         <Stack.Screen name="Search"        component={SearchScreen} />
 
-        {/* Checkout */}
-        <Stack.Screen name="CheckoutAddress" component={CheckoutAddressScreen} />
-        <Stack.Screen name="CheckoutPayment" component={CheckoutPaymentScreen} />
-        <Stack.Screen name="OrderSuccess"    component={OrderSuccessScreen} />
+        {/* Checkout Flow (4-Step) */}
+        <Stack.Screen name="CheckoutAddress"  component={CheckoutAddressScreen} />
+        <Stack.Screen name="CheckoutDelivery" component={CheckoutDeliveryScreen} />
+        <Stack.Screen name="CheckoutPayment"  component={CheckoutPaymentScreen} />
+        <Stack.Screen name="CheckoutReview"   component={CheckoutReviewScreen} />
+        <Stack.Screen name="OrderSuccess"     component={OrderSuccessScreen} />
 
-        {/* Orders & Finance */}
-        <Stack.Screen name="OrderHistory" component={OrderHistoryScreen} />
-        <Stack.Screen name="OrderDetail"  component={OrderDetailScreen} />
-        <Stack.Screen name="Wallet"       component={WalletScreen} />
+        {/* Orders & Tracking */}
+        <Stack.Screen name="OrderHistory"  component={OrderHistoryScreen} />
+        <Stack.Screen name="OrderDetail"   component={OrderDetailScreen} />
+        <Stack.Screen name="OrderTracking" component={OrderTrackingScreen} />
+        <Stack.Screen name="Wallet"        component={WalletScreen} />
 
         {/* RFQ */}
+        <Stack.Screen name="RFQList"   component={RFQListScreen} />
         <Stack.Screen name="RFQDetail" component={RFQDetailScreen} />
         <Stack.Screen name="RFQCreate" component={RFQCreateScreen} />
 
-        {/* Profile */}
+        {/* Profile & Saved */}
+        <Stack.Screen name="EditProfile"     component={EditProfileScreen} />
+        <Stack.Screen name="Wishlist"        component={WishlistScreen} />
         <Stack.Screen name="Settings"        component={SettingsScreen} />
         <Stack.Screen name="BusinessProfile" component={BusinessProfileScreen} />
         <Stack.Screen name="Addresses"       component={AddressesScreen} />
         <Stack.Screen name="Language"        component={LanguageCurrencyScreen} />
 
         {/* Vendors & Rentals */}
+        <Stack.Screen name="VendorList"      component={VendorListScreen} />
         <Stack.Screen name="VendorDashboard" component={VendorDashboardScreen} />
         <Stack.Screen name="VendorDetail"    component={VendorDetailScreen} />
         <Stack.Screen name="RentalList"      component={RentalListScreen} />

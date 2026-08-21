@@ -3,7 +3,7 @@
  */
 
 export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.hinchmart.com/v1';
+  process.env.EXPO_PUBLIC_API_BASE_URL || 'http://hello.hinchmart.com/api';
 
 
 export const API_TIMEOUT = 30000; // 30 seconds

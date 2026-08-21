@@ -61,7 +61,7 @@ const DEMO_ORDERS: Order[] = [
   },
 ];
 
-const DEMO_RFQS: RFQ[] = [
+export const DEMO_RFQS: RFQ[] = [
   {
     id: 'rfq1',
     rfqNumber: 'RFQ-88210',

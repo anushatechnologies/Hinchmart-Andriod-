@@ -85,6 +85,8 @@ export interface User {
    */
   businessProfile?: any | null;
 
+  reviewCount?: number;
+
   createdAt?: string;
 
   updatedAt?: string;

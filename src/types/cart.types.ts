@@ -12,6 +12,7 @@ export interface CartItem {
   quantity: number;
   unitPrice: number;
   totalPrice: number;
+  selected?: boolean;
 }
 
 export interface CartState {
