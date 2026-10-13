@@ -341,7 +341,7 @@ export const cartManager = {
           try {
             const cartItemId = cartItem?.cartItemId || (cartItem as any)?.id;
             if (cartItemId) {
-              await cartApi.removeCartItem(cartItemId);
+              await cartApi.removeCartItem(cartItemId, productId);
             }
             const liveCart = await cartApi.getCart();
             if (liveCart && isCurrentSessionValid(requestEpoch, requestUserId)) {
@@ -436,7 +436,7 @@ export const cartManager = {
           try {
             const cartItemId = cartItem?.cartItemId || (cartItem as any)?.id;
             if (cartItemId) {
-              await cartApi.removeCartItem(cartItemId);
+              await cartApi.removeCartItem(cartItemId, productId);
             }
             const liveCart = await cartApi.getCart();
             if (liveCart && isCurrentSessionValid(requestEpoch, requestUserId)) {

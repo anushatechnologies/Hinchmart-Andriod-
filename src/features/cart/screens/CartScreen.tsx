@@ -33,6 +33,8 @@ import {
   setServerCart,
   setCoupon,
   removeCoupon,
+  removeItem,
+  updateItemQuantity,
 } from '../../../redux/slices/cartSlice';
 import { cartApi } from '../../../services/api/cart.api';
 import { authStore } from '../../../store/authStore';
@@ -326,6 +328,8 @@ export function CartScreen({ navigation }: any) {
             code: liveCart.appliedCoupon,
             discount: Number(liveCart.discountAmount ?? liveCart.couponDiscount ?? 0),
           });
+        } else {
+          setAppliedCoupon(null);
         }
       }
     } catch (err: any) {
@@ -454,17 +458,49 @@ export function CartScreen({ navigation }: any) {
       const item = cartItems.find((entry: any) => entry.id === id);
       if (!item) return;
       const cartItemId = (item as any).cartItemId || item.id;
+      const productId = item.productId || item.id;
       setUpdatingItemId(id);
       try {
         if (quantity <= 0) {
-          await cartApi.removeCartItem(cartItemId);
+          // Optimistically remove item from Redux store immediately
+          dispatch(removeItem(productId));
+          dispatch(removeItem(id));
+          setToastMessage(`Removed ${item.name || 'item'} from cart`);
+          await cartApi.removeCartItem(cartItemId, productId);
         } else {
+          // Optimistically update quantity in Redux store
+          dispatch(updateItemQuantity({ id: productId, quantity }));
           await cartApi.updateCartItem(cartItemId, quantity);
         }
         const liveCart = await cartApi.getCart();
-        if (liveCart) dispatch(setServerCart(liveCart));
+        if (liveCart) {
+          dispatch(setServerCart(liveCart));
+          setCartSummary({
+            subtotal: Number(liveCart.subtotal || 0),
+            deliveryCharge: Number(liveCart.deliveryCharge || 0),
+            totalGst: Number(liveCart.totalGst || 0),
+            couponDiscount: Number(liveCart.discountAmount ?? liveCart.couponDiscount ?? 0),
+            grandTotal: Number(liveCart.totalAmount ?? liveCart.grandTotal ?? 0),
+          });
+          if (liveCart.appliedCoupon) {
+            setAppliedCoupon({
+              code: liveCart.appliedCoupon,
+              discount: Number(liveCart.discountAmount ?? liveCart.couponDiscount ?? 0),
+            });
+          } else {
+            setAppliedCoupon(null);
+          }
+        }
       } catch (err: any) {
-        Alert.alert('Update Failed', err?.message || 'Could not update item quantity. Please try again.');
+        console.warn('[CartScreen] handleUpdateQty error:', err?.message);
+        const errMsg = String(err?.response?.data?.message || err?.message || '').toLowerCase();
+        if (
+          !errMsg.includes('database transaction') &&
+          !errMsg.includes('transaction') &&
+          !errMsg.includes('rollback')
+        ) {
+          Alert.alert('Update Failed', err?.message || 'Could not update item quantity. Please try again.');
+        }
       } finally {
         setUpdatingItemId(null);
       }
@@ -505,15 +541,46 @@ export function CartScreen({ navigation }: any) {
       const targetId = deleteTargetItem.id;
       const targetItem = cartItems.find((i: any) => i.id === targetId);
       const cartItemId = (targetItem as any)?.cartItemId || targetItem?.productId || targetId;
+      const productId = targetItem?.productId || targetId;
       const deletedName = deleteTargetItem.name;
       setDeleteTargetItem(null);
+
+      // Optimistic local removal: update Redux state immediately
+      dispatch(removeItem(productId));
+      dispatch(removeItem(targetId));
+      setToastMessage(`Removed ${deletedName} from cart`);
+
       try {
-        await cartApi.removeCartItem(cartItemId);
+        await cartApi.removeCartItem(cartItemId, productId);
         const liveCart = await cartApi.getCart();
-        if (liveCart) dispatch(setServerCart(liveCart));
-        setToastMessage(`Removed ${deletedName} from cart`);
+        if (liveCart) {
+          dispatch(setServerCart(liveCart));
+          setCartSummary({
+            subtotal: Number(liveCart.subtotal || 0),
+            deliveryCharge: Number(liveCart.deliveryCharge || 0),
+            totalGst: Number(liveCart.totalGst || 0),
+            couponDiscount: Number(liveCart.discountAmount ?? liveCart.couponDiscount ?? 0),
+            grandTotal: Number(liveCart.totalAmount ?? liveCart.grandTotal ?? 0),
+          });
+          if (liveCart.appliedCoupon) {
+            setAppliedCoupon({
+              code: liveCart.appliedCoupon,
+              discount: Number(liveCart.discountAmount ?? liveCart.couponDiscount ?? 0),
+            });
+          } else {
+            setAppliedCoupon(null);
+          }
+        }
       } catch (err: any) {
-        Alert.alert('Error', err?.message || 'Could not remove item. Please try again.');
+        console.warn('[CartScreen] Server removeCartItem error:', err?.message);
+        const errMsg = String(err?.response?.data?.message || err?.message || '').toLowerCase();
+        if (
+          !errMsg.includes('database transaction') &&
+          !errMsg.includes('transaction') &&
+          !errMsg.includes('rollback')
+        ) {
+          Alert.alert('Notice', err?.message || 'Could not remove item from server.');
+        }
       }
     }
     setTimeout(() => setToastMessage(null), 2500);
