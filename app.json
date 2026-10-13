@@ -2,7 +2,7 @@
   "expo": {
     "name": "HINCH MART",
     "slug": "hinchmart",
-    "version": "1.0.29",
+    "version": "1.0.30",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "com.hinch",
-      "versionCode": 30,
+      "versionCode": 31,
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
