@@ -394,12 +394,125 @@ export function ProductDetailScreen({ route, navigation }: any) {
   const tierSavings = Math.max(0, baseOrderTotal - orderTotal);
   const totalSavings = Math.round((savingsPerUnit * quantity + tierSavings) * 100) / 100;
 
-  // Real Related Products from same category/catalog
-  const relatedProducts = useMemo(() => {
-    return liveProducts
-      .filter((p) => String(p.id || p.productId) !== String(productId))
-      .slice(0, 8);
-  }, [liveProducts, productId]);
+  // Dynamic Related Products from API (Matching Subcategory > Category > Brand)
+  const [dynamicRelatedProducts, setDynamicRelatedProducts] = useState<ApiProduct[]>([]);
+  const [isLoadingRelated, setIsLoadingRelated] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!passedProduct) return;
+
+    const currentId = String(passedProduct.id || (passedProduct as any)?.productId || productId);
+    const subId = passedProduct.subcategoryId || (passedProduct as any)?.subCategory?.id;
+    const catId = passedProduct.categoryId || (passedProduct as any)?.category?.id;
+    const brandName = passedProduct.brand || (passedProduct as any)?.brandName;
+
+    setIsLoadingRelated(true);
+
+    const promises: Promise<ApiProduct[]>[] = [];
+    if (subId) {
+      promises.push(productsApi.getProducts({ subcategoryId: subId, limit: 12 }).catch(() => []));
+    }
+    if (catId) {
+      promises.push(productsApi.getProducts({ categoryId: catId, limit: 12 }).catch(() => []));
+    }
+    if (brandName) {
+      promises.push(productsApi.getProducts({ brand: brandName, limit: 12 }).catch(() => []));
+    }
+
+    Promise.all(promises)
+      .then((results) => {
+        if (!isMounted) return;
+        const merged: ApiProduct[] = [];
+        const seen = new Set<string>();
+
+        // 1. Collect priority items from subcategory, then category, then brand
+        for (const list of results) {
+          if (Array.isArray(list)) {
+            for (const item of list) {
+              const itemId = String(item.id || item.productId);
+              if (itemId !== currentId && !seen.has(itemId)) {
+                seen.add(itemId);
+                merged.push(item);
+              }
+            }
+          }
+        }
+
+        // 2. Secondary fallback: check liveProducts for matching category or brand
+        if (merged.length < 4 && Array.isArray(liveProducts)) {
+          for (const item of liveProducts) {
+            const itemId = String(item.id || item.productId);
+            if (itemId !== currentId && !seen.has(itemId)) {
+              const matchesCat = catId && String(item.categoryId) === String(catId);
+              const matchesBrand = brandName && item.brand && item.brand.toLowerCase() === brandName.toLowerCase();
+              if (matchesCat || matchesBrand) {
+                seen.add(itemId);
+                merged.push(item);
+              }
+            }
+          }
+        }
+
+        // 3. Tertiary fallback if catalog is small: ensure related items are never empty
+        if (merged.length === 0 && Array.isArray(liveProducts)) {
+          for (const item of liveProducts) {
+            const itemId = String(item.id || item.productId);
+            if (itemId !== currentId && !seen.has(itemId)) {
+              seen.add(itemId);
+              merged.push(item);
+              if (merged.length >= 8) break;
+            }
+          }
+        }
+
+        setDynamicRelatedProducts(merged.slice(0, 12));
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingRelated(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [
+    passedProduct?.id,
+    (passedProduct as any)?.productId,
+    passedProduct?.subcategoryId,
+    passedProduct?.categoryId,
+    passedProduct?.brand,
+    productId,
+    liveProducts,
+  ]);
+
+  const relatedProducts = dynamicRelatedProducts;
+
+  const handleViewAllRelated = () => {
+    const catId = passedProduct?.categoryId || (passedProduct as any)?.category?.id || (passedProduct as any)?.category?.categoryId;
+    const subId = passedProduct?.subcategoryId || (passedProduct as any)?.subCategory?.id || (passedProduct as any)?.subCategory?.subcategoryId;
+    const catName = (passedProduct as any)?.categoryName || (passedProduct as any)?.category?.name || (passedProduct as any)?.category;
+    const subName = (passedProduct as any)?.subcategoryName || (passedProduct as any)?.subCategory?.name;
+    const pBrand = passedProduct?.brand || (passedProduct as any)?.brandName;
+
+    navigation.navigate('ProductList', {
+      categoryId: catId,
+      categoryName: catName,
+      subcategoryId: subId,
+      subcategoryName: subName,
+      brand: pBrand,
+      brandName: pBrand,
+      title: subName || catName || (pBrand ? `${pBrand} Products` : 'Related Products'),
+    });
+  };
+
+  const handleOpenBrandStore = () => {
+    if (!brand) return;
+    navigation.navigate('ProductList', {
+      brand,
+      brandName: brand,
+      title: `${brand} Store`,
+    });
+  };
 
   const handleShare = async () => {
     try {
@@ -449,11 +562,11 @@ export function ProductDetailScreen({ route, navigation }: any) {
   const handleCheckPincode = () => {
     if (!pincode.trim() || pincode.trim().length < 6) {
       setIsCheckedPincode(false);
-      setPincodeMessage('Please enter a valid 6-digit delivery pincode');
+      setPincodeMessage('Please enter a 6-digit delivery pincode');
       return;
     }
     setIsCheckedPincode(true);
-    setPincodeMessage('Serviceable: Standard delivery available to your pincode');
+    setPincodeMessage('Serviceable: Standard & Express delivery available to this pincode');
   };
 
   const handleWishlistToggle = () => {
@@ -506,6 +619,30 @@ export function ProductDetailScreen({ route, navigation }: any) {
     if (res?.success) {
       setToastMessage(`Added ${quantity} ${unit}${quantity > 1 ? 's' : ''} to Cart`);
       setTimeout(() => setToastMessage(null), 2500);
+    }
+  };
+
+  const handleBuyNow = async () => {
+    if (!isInStock) {
+      Alert.alert('Out of Stock', 'This product is currently out of stock.');
+      return;
+    }
+    if (cartQuantity === 0) {
+      const prodStoreId = (passedProduct as any)?.storeId;
+      const res = await cartManager.addToCart(
+        dispatch,
+        passedProduct,
+        quantity,
+        prodStoreId,
+        navigation,
+        'ProductDetail',
+        route?.params
+      );
+      if (res?.success) {
+        navigation.navigate('Cart');
+      }
+    } else {
+      navigation.navigate('Cart');
     }
   };
 
@@ -727,109 +864,386 @@ export function ProductDetailScreen({ route, navigation }: any) {
         )}
 
         <View style={styles.mainContentPadding}>
-          {/* Top Real Badges Row */}
-          <View style={styles.topBadgesRow}>
-            {Boolean(passedProduct?.vendor?.isVerified || passedProduct?.verified) && (
-              <View style={styles.verifiedManufacturerPill}>
-                <Ionicons name="shield-checkmark" size={12} color="#2563EB" />
-                <Text style={styles.verifiedManufacturerPillText}>Verified Partner</Text>
-              </View>
-            )}
+          {/* ── Amazon Brand Link ── */}
+          {Boolean(brand) && (
+            <TouchableOpacity
+              onPress={handleOpenBrandStore}
+              activeOpacity={0.7}
+              style={styles.amazonBrandLinkRow}
+            >
+              <Text style={styles.amazonBrandLinkText}>
+                Visit the {brand} Store
+              </Text>
+              <Ionicons name="chevron-forward" size={13} color="#007185" />
+            </TouchableOpacity>
+          )}
+
+          {/* ── Amazon Product Title ── */}
+          <Text style={[styles.amazonProductTitle, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+            {productName}
+          </Text>
+
+          {/* ── Amazon Star Rating & Review Count Row ── */}
+          <View style={styles.amazonRatingRow}>
+            <View style={styles.amazonStarsGroup}>
+              {[1, 2, 3, 4, 5].map((s) => (
+                <Ionicons
+                  key={`top_star_${s}`}
+                  name={s <= Math.round(reviewSummary?.averageRating || rating || (hasRealReviews ? 4.5 : 4)) ? 'star' : 'star-outline'}
+                  size={14}
+                  color="#FFA41C"
+                />
+              ))}
+              <Text style={[styles.amazonRatingVal, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+                {(reviewSummary?.averageRating || rating || (hasRealReviews ? 4.5 : 4.0)).toFixed(1)}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setShowReviewModal(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.amazonRatingsCountText}>
+                {reviewSummary?.totalReviews ? `${reviewSummary.totalReviews} ratings` : reviewCount > 0 ? `${reviewCount} ratings` : liveReviews.length > 0 ? `${liveReviews.length} ratings` : 'Be the first to review'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Amazon Badges: Hinch's Choice / 24H Delivery / SKU ── */}
+          <View style={styles.amazonBadgeRow}>
+            <View style={styles.amazonChoiceBadge}>
+              <Text style={styles.amazonChoiceText}>Hinch's</Text>
+              <Text style={styles.amazonChoiceSub}>Choice</Text>
+              <Text style={styles.amazonChoiceCat} numberOfLines={1}>
+                {(passedProduct as any)?.subcategoryName ? `for "${(passedProduct as any).subcategoryName}"` : brand ? `for "${brand}"` : 'in Hardware'}
+              </Text>
+            </View>
 
             {Boolean(passedProduct?.is24HourDelivery) && (
-              <View style={styles.deliveryBadgePill}>
-                <Ionicons name="flash" size={12} color="#D97706" />
-                <Text style={styles.deliveryBadgePillText}>24H EXPRESS DELIVERY</Text>
+              <View style={styles.amazonExpressBadge}>
+                <Ionicons name="flash" size={11} color="#B45309" />
+                <Text style={styles.amazonExpressBadgeText}>24H EXPRESS</Text>
               </View>
             )}
 
             {Boolean(sku) && (
-              <View style={[styles.skuBadgePill, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
-                <Text style={[styles.skuBadgePillText, { color: isDark ? '#94A3B8' : '#64748B' }]}>SKU: {sku}</Text>
+              <View style={[styles.amazonSkuBadge, { backgroundColor: isDark ? '#1E293B' : '#F2F4F4', borderColor: isDark ? '#334155' : '#D5D9D9' }]}>
+                <Text style={[styles.amazonSkuBadgeText, { color: isDark ? '#94A3B8' : '#565959' }]}>SKU: {sku}</Text>
               </View>
             )}
           </View>
 
-          {/* Product Title */}
-          <Text style={[styles.productTitleText, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
-            {productName}
-          </Text>
+          {/* ── Amazon Pricing Section ── */}
+          <View style={[styles.amazonPriceSection, { borderTopColor: isDark ? '#334155' : '#E7E7E7' }]}>
+            {hasDiscount && (
+              <View style={styles.amazonDealBadge}>
+                <Text style={styles.amazonDealBadgeText}>Limited time deal</Text>
+              </View>
+            )}
 
-          {/* Real Rating & Real Stock Status Row */}
-          <View style={styles.ratingStockRow}>
-            {hasRating && rating != null && (reviewCount > 0 || hasRealReviews) ? (
-              <View style={styles.ratingLeftGroup}>
-                <Ionicons name="star" size={15} color="#F59E0B" />
-                <Text style={[styles.ratingNumberText, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
-                  {rating.toFixed(1)}
+            <View style={styles.amazonPriceMainRow}>
+              {hasDiscount && discountPercent > 0 && (
+                <Text style={styles.amazonDiscountPct}>-{discountPercent}%</Text>
+              )}
+              <View style={styles.amazonPriceDisplayGroup}>
+                <Text style={[styles.amazonCurrencySymbol, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>₹</Text>
+                <Text style={[styles.amazonMainPrice, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+                  {formatINR(effectiveUnitPrice)}
                 </Text>
-                <Text style={[styles.ratingReviewsText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                  ({reviewCount || liveReviews.length} reviews)
+                <Text style={[styles.amazonPriceUnitText, { color: isDark ? '#94A3B8' : '#565959' }]}>
+                  / {unit}
                 </Text>
               </View>
-            ) : (
-              <View style={styles.ratingLeftGroup}>
-                <Ionicons name="shield-checkmark" size={14} color="#10B981" />
-                <Text style={[styles.ratingReviewsText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                  Direct Manufacturer Supply
+            </View>
+
+            {hasDiscount && comparePrice != null && (
+              <View style={styles.amazonMrpRow}>
+                <Text style={[styles.amazonMrpLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>
+                  M.R.P.:{' '}
+                </Text>
+                <Text style={[styles.amazonMrpValue, { color: isDark ? '#94A3B8' : '#565959' }]}>
+                  ₹{formatINR(comparePrice)}
                 </Text>
               </View>
             )}
 
-            <View style={styles.stockRightGroup}>
-              <View style={[styles.greenStockDot, !isInStock && { backgroundColor: '#EF4444' }]} />
-              <Text style={[styles.inStockText, !isInStock && { color: '#EF4444' }]}>
-                {isInStock ? `In Stock (${stockQty} ${unit}${stockQty > 1 ? 's' : ''})` : 'Out of Stock'}
+            <Text style={[styles.amazonTaxesText, { color: isDark ? '#94A3B8' : '#565959' }]}>
+              Inclusive of all taxes {passedProduct?.gstRate ? `(${passedProduct.gstRate}% GST included)` : ''}
+            </Text>
+            <View style={styles.amazonItcRow}>
+              <Ionicons name="receipt-outline" size={13} color="#007185" />
+              <Text style={styles.amazonTaxInvoiceText}>
+                Tax Invoice provided for Input Tax Credit (ITC)
               </Text>
             </View>
           </View>
 
-          {/* ── Perfectly Aligned Price Card ── */}
-          <View style={[styles.priceCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
-            <View style={styles.priceRowContainer}>
-              <View style={styles.priceLeftCol}>
-                <View style={styles.priceMainGroup}>
-                  <Text style={[styles.priceCurrencySign, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>₹</Text>
-                  <Text style={[styles.priceMainAmount, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
-                    {formatINR(effectiveUnitPrice)}
-                  </Text>
-                  <Text style={[styles.priceUnitSlash, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                    / {unit}
-                  </Text>
+          {/* ── Amazon Offers Carousel ── */}
+          <View style={[styles.amazonOffersBlock, { borderTopColor: isDark ? '#334155' : '#E7E7E7' }]}>
+            <View style={styles.amazonOffersHeader}>
+              <Ionicons name="pricetag" size={15} color="#CC0C39" />
+              <Text style={[styles.amazonOffersTitle, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+                Offers
+              </Text>
+            </View>
 
-                  {discountPercent > 0 && (
-                    <View style={styles.discountTagPill}>
-                      <Text style={styles.discountTagPillText}>{discountPercent}% OFF</Text>
-                    </View>
-                  )}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.amazonOffersScroll}>
+              <View style={[styles.amazonOfferCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#D5D9D9' }]}>
+                <Text style={[styles.amazonOfferCardTitle, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+                  Bank Offer
+                </Text>
+                <Text style={[styles.amazonOfferCardBody, { color: isDark ? '#CBD5E1' : '#333333' }]} numberOfLines={3}>
+                  Upto ₹500 discount on select Credit Cards, UPI & Net Banking.
+                </Text>
+                <Text style={styles.amazonOfferLink}>3 offers ›</Text>
+              </View>
+
+              <View style={[styles.amazonOfferCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#D5D9D9' }]}>
+                <Text style={[styles.amazonOfferCardTitle, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+                  Partner Offer
+                </Text>
+                <Text style={[styles.amazonOfferCardBody, { color: isDark ? '#CBD5E1' : '#333333' }]} numberOfLines={3}>
+                  Save up to {passedProduct?.gstRate || 18}% with GST invoice for verified business accounts.
+                </Text>
+                <Text style={styles.amazonOfferLink}>1 offer ›</Text>
+              </View>
+
+              {bulkPricingTiers.length > 0 && (
+                <View style={[styles.amazonOfferCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#D5D9D9' }]}>
+                  <Text style={[styles.amazonOfferCardTitle, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+                    Bulk Savings
+                  </Text>
+                  <Text style={[styles.amazonOfferCardBody, { color: isDark ? '#CBD5E1' : '#333333' }]} numberOfLines={3}>
+                    Order wholesale volumes to unlock extra discount.
+                  </Text>
+                  <Text style={styles.amazonOfferLink}>Tiers below ›</Text>
                 </View>
+              )}
+            </ScrollView>
+          </View>
 
-                {hasDiscount && (
-                  <View style={styles.mrpSavingsRow}>
-                    <Text style={[styles.mrpStrikethroughText, { color: isDark ? '#64748B' : '#94A3B8' }]}>
-                      MRP: ₹{formatINR(comparePrice!)}
-                    </Text>
-                    <View style={styles.saveBadgePill}>
-                      <Text style={styles.saveBadgePillText}>
-                        Save ₹{formatINR(savingsPerUnit)}/{unit}
-                      </Text>
-                    </View>
-                  </View>
-                )}
+          {/* ── Amazon 4-Pill Trust Badges ── */}
+          <View style={[styles.amazonTrustBadgesRow, { borderTopColor: isDark ? '#334155' : '#E7E7E7', borderBottomColor: isDark ? '#334155' : '#E7E7E7' }]}>
+            <View style={styles.amazonTrustBadgeItem}>
+              <View style={[styles.amazonTrustCircle, { backgroundColor: isDark ? '#1E293B' : '#F7FAFA' }]}>
+                <Ionicons name="receipt-outline" size={20} color="#007185" />
               </View>
+              <Text style={[styles.amazonTrustText, { color: isDark ? '#CBD5E1' : '#007185' }]}>
+                GST Invoice{'\n'}with ITC
+              </Text>
             </View>
 
-            <View style={[styles.priceCardDivider, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]} />
+            <View style={styles.amazonTrustBadgeItem}>
+              <View style={[styles.amazonTrustCircle, { backgroundColor: isDark ? '#1E293B' : '#F7FAFA' }]}>
+                <Ionicons name="car-outline" size={20} color="#007185" />
+              </View>
+              <Text style={[styles.amazonTrustText, { color: isDark ? '#CBD5E1' : '#007185' }]}>
+                {passedProduct?.is24HourDelivery ? '24H Express' : 'Free'}{'\n'}Delivery
+              </Text>
+            </View>
 
-            <View style={styles.gstNoteRow}>
-              <Ionicons name="receipt-outline" size={15} color={isDark ? '#38BDF8' : '#0284C7'} style={{ marginTop: 1 }} />
-              <Text style={[styles.gstNoteText, { color: isDark ? '#94A3B8' : '#475569' }]}>
-                Price inclusive of all taxes {passedProduct?.gstRate ? `(${passedProduct.gstRate}% GST)` : ''} • Tax Invoice provided for Input Tax Credit (ITC)
+            <View style={styles.amazonTrustBadgeItem}>
+              <View style={[styles.amazonTrustCircle, { backgroundColor: isDark ? '#1E293B' : '#F7FAFA' }]}>
+                <Ionicons name="shield-checkmark-outline" size={20} color="#007185" />
+              </View>
+              <Text style={[styles.amazonTrustText, { color: isDark ? '#CBD5E1' : '#007185' }]}>
+                Top Brand{'\n'}100% Genuine
+              </Text>
+            </View>
+
+            <View style={styles.amazonTrustBadgeItem}>
+              <View style={[styles.amazonTrustCircle, { backgroundColor: isDark ? '#1E293B' : '#F7FAFA' }]}>
+                <Ionicons name="lock-closed-outline" size={20} color="#007185" />
+              </View>
+              <Text style={[styles.amazonTrustText, { color: isDark ? '#CBD5E1' : '#007185' }]}>
+                Secure{'\n'}transaction
               </Text>
             </View>
           </View>
 
-          {/* ── Wholesale B2B Volume Pricing Tiers (Rendered ONLY if configured in Backend) ── */}
+          {/* ── Amazon Buy Box Card ── */}
+          <View style={[styles.amazonBuyBox, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#D5D9D9' }]}>
+            <View style={styles.amazonBuyBoxPriceRow}>
+              <Text style={[styles.amazonBuyBoxPrice, { color: isDark ? '#F8FAFC' : '#B12704' }]}>
+                ₹{formatINR(effectiveUnitPrice)}
+              </Text>
+              <Text style={[styles.amazonBuyBoxUnit, { color: isDark ? '#94A3B8' : '#565959' }]}>
+                / {unit}
+              </Text>
+            </View>
+
+            {/* Pincode & Delivery Availability */}
+            <View style={styles.amazonBuyBoxLocationRow}>
+              <Ionicons name="location-sharp" size={15} color="#007185" />
+              <Text style={styles.amazonBuyBoxLocationText} numberOfLines={1}>
+                {pincode ? `Deliver to ${pincode}` : 'Deliver to your pincode'}
+              </Text>
+            </View>
+
+            <View style={styles.amazonBuyBoxPincodeRow}>
+              <TextInput
+                value={pincode}
+                onChangeText={setPincode}
+                placeholder="Enter 6-digit delivery pincode"
+                placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
+                keyboardType="number-pad"
+                maxLength={6}
+                style={[styles.amazonPincodeInput, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: isDark ? '#334155' : '#D5D9D9', color: isDark ? '#F8FAFC' : '#0F1111' }]}
+              />
+              <TouchableOpacity
+                onPress={handleCheckPincode}
+                style={styles.amazonPincodeApplyBtn}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.amazonPincodeApplyText}>Check</Text>
+              </TouchableOpacity>
+            </View>
+
+            {isCheckedPincode && (
+              <View style={styles.amazonPincodeResultRow}>
+                <Ionicons name="checkmark-circle" size={14} color="#007600" />
+                <Text style={styles.amazonPincodeResultText}>{pincodeMessage}</Text>
+              </View>
+            )}
+
+            {/* Delivery Timing */}
+            <Text style={[styles.amazonDeliveryDateTitle, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+              FREE delivery <Text style={{ fontFamily: 'Inter_700Bold' }}>Tomorrow</Text>
+            </Text>
+            <Text style={[styles.amazonOrderWithinText, { color: isDark ? '#94A3B8' : '#565959' }]}>
+              Order within <Text style={{ color: '#007600', fontFamily: 'Inter_600SemiBold' }}>5 hrs 30 mins</Text>
+            </Text>
+
+            {/* In Stock Indicator */}
+            <Text style={[styles.amazonInStockText, !isInStock && { color: '#B12704' }]}>
+              {isInStock ? `In Stock` : 'Currently unavailable'}
+            </Text>
+            {isInStock && stockQty <= 10 && stockQty > 0 && (
+              <Text style={styles.amazonLowStockText}>
+                Only {stockQty} left in stock - order soon.
+              </Text>
+            )}
+
+            {/* Merchant Details Table */}
+            <View style={styles.amazonMerchantTable}>
+              <View style={styles.amazonMerchantRow}>
+                <Text style={[styles.amazonMerchantLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>Ships from</Text>
+                <Text style={[styles.amazonMerchantVal, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>Hinch Mart</Text>
+              </View>
+              <View style={styles.amazonMerchantRow}>
+                <Text style={[styles.amazonMerchantLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>Sold by</Text>
+                <Text style={[styles.amazonMerchantVal, { color: isDark ? '#F8FAFC' : '#007185' }]}>
+                  {passedProduct?.vendor?.companyName || brand || 'Direct Manufacturer'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Quantity Stepper & Quick Add */}
+            <View style={styles.amazonQtyBlock}>
+              <View style={styles.amazonQtyHeaderRow}>
+                <Text style={[styles.amazonQtyTitle, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+                  Quantity:
+                </Text>
+                <View style={[styles.amazonQtyStepper, { backgroundColor: isDark ? '#0F172A' : '#F0F2F2', borderColor: isDark ? '#334155' : '#D5D9D9' }]}>
+                  <TouchableOpacity
+                    onPress={handleDecrement}
+                    disabled={quantity <= moq}
+                    style={[styles.amazonQtyBtn, quantity <= moq && { opacity: 0.4 }]}
+                  >
+                    <Ionicons name="remove" size={16} color={isDark ? '#F8FAFC' : '#0F1111'} />
+                  </TouchableOpacity>
+                  <Text style={[styles.amazonQtyValueText, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+                    {quantity}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={handleIncrement}
+                    disabled={stockQty > 0 && quantity >= stockQty}
+                    style={[styles.amazonQtyBtn, stockQty > 0 && quantity >= stockQty && { opacity: 0.4 }]}
+                  >
+                    <Ionicons name="add" size={16} color={isDark ? '#F8FAFC' : '#0F1111'} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Quick Volume Pills */}
+              <View style={styles.amazonQuickAddPillsRow}>
+                <Text style={[styles.amazonQuickAddLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>Quick Add:</Text>
+                {(moq >= 10 ? [10, 50, 100, 500] : [1, 5, 10, 25]).map((step) => (
+                  <TouchableOpacity
+                    key={`amz_step_${step}`}
+                    onPress={() => handleQuickAddVolume(step)}
+                    style={[styles.amazonQuickAddPill, { backgroundColor: isDark ? '#0F172A' : '#F7FAFA', borderColor: isDark ? '#334155' : '#D5D9D9' }]}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.amazonQuickAddPillText, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>+{step} {unit}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Order Subtotal Calculation */}
+              <View style={[styles.amazonCalcSummaryBox, { backgroundColor: isDark ? '#0F172A' : '#F7FAFA' }]}>
+                <Text style={[styles.amazonCalcSummaryText, { color: isDark ? '#94A3B8' : '#565959' }]}>
+                  Subtotal ({quantity} {unit}{quantity > 1 ? 's' : ''}):{' '}
+                  <Text style={{ fontFamily: 'Poppins_700Bold', color: isDark ? '#F8FAFC' : '#B12704' }}>
+                    ₹{formatINR(orderTotal)}
+                  </Text>
+                </Text>
+              </View>
+            </View>
+
+            {/* Amazon Yellow Button: Add to Cart */}
+            <TouchableOpacity
+              onPress={handleAddToCart}
+              disabled={!isInStock || quantity < 1}
+              style={[
+                styles.amazonYellowBtn,
+                (!isInStock || quantity < 1) && styles.amazonBtnDisabled,
+              ]}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.amazonYellowBtnText}>
+                {!isInStock
+                  ? 'Out of Stock'
+                  : cartQuantity > 0
+                  ? (quantity !== cartQuantity ? 'Update Cart' : 'View in Cart')
+                  : 'Add to Cart'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Amazon Orange Button: Buy Now */}
+            <TouchableOpacity
+              onPress={handleBuyNow}
+              disabled={!isInStock || quantity < 1}
+              style={[
+                styles.amazonOrangeBtn,
+                (!isInStock || quantity < 1) && styles.amazonBtnDisabled,
+              ]}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.amazonOrangeBtnText}>
+                Buy Now
+              </Text>
+            </TouchableOpacity>
+
+            {/* RFQ Custom Quote Button */}
+            <TouchableOpacity
+              onPress={handleOpenRFQ}
+              style={[styles.amazonRfqBtn, { borderColor: isDark ? '#334155' : '#D5D9D9' }]}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="document-text-outline" size={15} color={isDark ? '#F8FAFC' : '#0F1111'} />
+              <Text style={[styles.amazonRfqBtnText, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+                Request Custom Project RFQ
+              </Text>
+            </TouchableOpacity>
+
+            {/* Secure Transaction Link */}
+            <View style={styles.amazonSecureTxRow}>
+              <Ionicons name="lock-closed" size={13} color="#007185" />
+              <Text style={styles.amazonSecureTxText}>Secure transaction</Text>
+            </View>
+          </View>
+
+          {/* ── Volume Discount Tiers Matrix (If configured) ── */}
           {bulkPricingTiers.length > 0 && (
             <View style={[styles.tierMatrixCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#FECACA' }]}>
               <View style={styles.tierMatrixHeader}>
@@ -890,295 +1304,85 @@ export function ProductDetailScreen({ route, navigation }: any) {
             </View>
           )}
 
-          {/* ── Order Calculation Summary ── */}
-          <View style={[styles.calcBoxCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
-            <View style={styles.calcThreeColsRow}>
-              <View style={styles.calcCol}>
-                <Text style={styles.calcColHeader}>UNIT RATE</Text>
-                <Text style={[styles.calcColValue, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
-                  ₹{formatINR(effectiveUnitPrice)}
-                </Text>
-              </View>
-
-              <Text style={styles.calcSymbol}>×</Text>
-
-              <View style={styles.calcCol}>
-                <Text style={styles.calcColHeader}>QUANTITY</Text>
-                <Text style={[styles.calcColValue, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
-                  {quantity} {unit}{quantity > 1 ? 's' : ''}
-                </Text>
-              </View>
-
-              <Text style={styles.calcSymbol}>=</Text>
-
-              <View style={styles.calcCol}>
-                <Text style={styles.calcColHeader}>TOTAL AMOUNT</Text>
-                <Text style={[styles.calcColTotalValue, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
-                  ₹{formatINR(orderTotal)}
-                </Text>
-              </View>
-            </View>
-
-            {totalSavings > 0 && (
-              <View style={[styles.calcSavingsBar, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5', borderTopColor: isDark ? '#065F46' : '#D1FAE5' }]}>
-                <Ionicons name="trending-down-outline" size={15} color="#059669" />
-                <Text style={styles.calcSavingsBarText}>
-                  Total Savings: ₹{formatINR(totalSavings)} on this order
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* ── Select Quantity / Procurement Volume ── */}
-          <View style={[styles.procurementVolumeCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
-            <View style={styles.volumeHeaderRow}>
-              <View style={styles.volumeTitleBlock}>
-                <Text style={[styles.volumeMainTitle, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
-                  Select Quantity
-                </Text>
-                <Text style={[styles.moqSubtitle, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                  Minimum Order Quantity: <Text style={[styles.moqBold, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>{moq} {unit}{moq > 1 ? 's' : ''}</Text>
-                </Text>
-              </View>
-
-              {/* Stepper counter */}
-              <View style={[styles.stepperContainer, { backgroundColor: isDark ? '#0F172A' : '#F1F5F9' }]}>
-                <TouchableOpacity
-                  onPress={handleDecrement}
-                  disabled={quantity <= moq}
-                  style={[
-                    styles.stepperBtn,
-                    { backgroundColor: isDark ? '#1E293B' : '#FFFFFF' },
-                    quantity <= moq && { opacity: 0.4 },
-                  ]}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="remove" size={18} color={isDark ? '#F8FAFC' : '#0F172A'} />
-                </TouchableOpacity>
-
-                <TextInput
-                  value={String(quantity)}
-                  onChangeText={(t) => {
-                    const parsed = parseInt(t.replace(/[^0-9]/g, ''), 10);
-                    if (!isNaN(parsed)) {
-                      const nextQty = Math.max(0, parsed);
-                      setQuantity(nextQty);
-                      if (cartQuantity > 0 && nextQty >= moq) {
-                        cartManager.setQuantity(dispatch, passedProduct, nextQty, cartItem, moq);
-                      }
-                    } else if (t === '') {
-                      setQuantity(0);
-                    }
-                  }}
-                  onBlur={() => {
-                    if (quantity < moq) {
-                      setQuantity(moq);
-                      if (cartQuantity > 0) {
-                        cartManager.setQuantity(dispatch, passedProduct, moq, cartItem, moq);
-                      }
-                    }
-                  }}
-                  keyboardType="number-pad"
-                  style={[styles.stepperValueInput, { color: isDark ? '#F8FAFC' : '#0F172A' }]}
-                  selectTextOnFocus
-                />
-
-                <TouchableOpacity
-                  onPress={handleIncrement}
-                  disabled={stockQty > 0 && quantity >= stockQty}
-                  style={[
-                    styles.stepperBtn,
-                    { backgroundColor: isDark ? '#1E293B' : '#FFFFFF' },
-                    stockQty > 0 && quantity >= stockQty && { opacity: 0.4 },
-                  ]}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="add" size={18} color={isDark ? '#F8FAFC' : '#0F172A'} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Quick Add Pills: Contextual increments */}
-            <View style={styles.quickAddRow}>
-              <Text style={[styles.quickAddLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Quick Add:</Text>
-              {(moq >= 10 ? [10, 50, 100, 500] : [1, 5, 10, 25]).map((step) => (
-                <TouchableOpacity
-                  key={`step_${step}`}
-                  onPress={() => handleQuickAddVolume(step)}
-                  style={[styles.quickAddPill, { backgroundColor: isDark ? '#0F172A' : '#EFF6FF', borderColor: isDark ? '#334155' : '#BFDBFE' }]}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.quickAddPillText}>+{step} {unit}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* ── Delivery Feasibility Pincode Checker ── */}
-          <View style={[styles.feasibilityCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
-            <View style={styles.feasibilityHeaderRow}>
-              <Ionicons name="location" size={18} color="#2563EB" />
-              <Text style={[styles.feasibilityHeaderTitle, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
-                Delivery Availability
-              </Text>
-            </View>
-
-            <View style={styles.pincodeInputRow}>
-              <TextInput
-                value={pincode}
-                onChangeText={setPincode}
-                placeholder="Enter 6-digit delivery pincode"
-                placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
-                keyboardType="number-pad"
-                maxLength={6}
-                style={[styles.pincodeTextInput, { backgroundColor: isDark ? '#0F172A' : '#FFFFFF', borderColor: isDark ? '#334155' : '#CBD5E1', color: isDark ? '#F8FAFC' : '#0F172A' }]}
-              />
-              <TouchableOpacity
-                onPress={handleCheckPincode}
-                style={styles.pincodeCheckBtn}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.pincodeCheckBtnText}>Check</Text>
-              </TouchableOpacity>
-            </View>
-
-            {isCheckedPincode && (
-              <View style={styles.pincodeVerifiedRow}>
-                <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                <Text style={styles.pincodeVerifiedText}>{pincodeMessage}</Text>
-              </View>
-            )}
-
-            <View style={[styles.trustGridDivider, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]} />
-
-            {/* Quality & Assurance Grid */}
-            <View style={styles.trustGrid}>
-              <View style={styles.trustItem}>
-                <Ionicons name="flash-outline" size={15} color="#2563EB" />
-                <Text style={[styles.trustItemText, { color: isDark ? '#94A3B8' : '#475569' }]}>Direct Mill / Factory Dispatch</Text>
-              </View>
-
-              <View style={styles.trustItem}>
-                <Ionicons name="document-text-outline" size={15} color="#2563EB" />
-                <Text style={[styles.trustItemText, { color: isDark ? '#94A3B8' : '#475569' }]}>GST Tax Invoice with ITC</Text>
-              </View>
-
-              <View style={styles.trustItem}>
-                <Ionicons name="shield-checkmark-outline" size={15} color="#2563EB" />
-                <Text style={[styles.trustItemText, { color: isDark ? '#94A3B8' : '#475569' }]}>100% Quality Checked</Text>
-              </View>
-
-              <View style={styles.trustItem}>
-                <Ionicons name="car-outline" size={15} color="#2563EB" />
-                <Text style={[styles.trustItemText, { color: isDark ? '#94A3B8' : '#475569' }]}>Site Logistics Support</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* ── Supplier / Brand Overview ── */}
-          <View style={[styles.supplierCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
-            <View style={styles.supplierTopRow}>
-              <View style={[styles.supplierIconBox, { backgroundColor: isDark ? '#0F172A' : '#EFF6FF' }]}>
-                <Ionicons name="business" size={22} color={isDark ? '#38BDF8' : '#2563EB'} />
-              </View>
-
-              <View style={styles.supplierInfoCol}>
-                <View style={styles.supplierNameVerifiedRow}>
-                  <Text style={[styles.supplierNameText, { color: isDark ? '#F8FAFC' : '#0F172A' }]} numberOfLines={1}>
-                    {passedProduct?.vendor?.companyName || brand || 'HINCH DIRECT'}
-                  </Text>
-                  {(passedProduct?.vendor?.isVerified || passedProduct?.verified) && (
-                    <Ionicons name="checkmark-circle" size={15} color="#2563EB" />
-                  )}
-                </View>
-                {Boolean(passedProduct?.vendor?.city) && (
-                  <View style={styles.supplierLocRow}>
-                    <Ionicons name="location-sharp" size={12} color="#EF4444" />
-                    <Text style={[styles.supplierLocText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                      {passedProduct.vendor?.city}
-                    </Text>
-                  </View>
-                )}
-                {typeof passedProduct?.vendor?.rating === 'number' && passedProduct.vendor.rating > 0 && (
-                  <View style={styles.supplierStarsRow}>
-                    <Ionicons name="star" size={12} color="#F59E0B" />
-                    <Text style={styles.supplierStarsText}>{passedProduct.vendor?.rating?.toFixed(1)}</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-
-            <TouchableOpacity
-              onPress={handleOpenRFQ}
-              style={[styles.requestRfqOutlineBtn, { borderColor: '#E31E24' }]}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="create-outline" size={16} color="#E31E24" />
-              <Text style={[styles.requestRfqOutlineBtnText, { color: '#E31E24' }]}>
-                Request Custom Project RFQ
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ── Product Overview & Description ── */}
-          {Boolean(description) && (
-            <View style={[styles.descriptionCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
-              <View style={styles.descriptionHeaderRow}>
-                <Ionicons name="document-text-outline" size={16} color="#E31E24" />
-                <Text style={[styles.descriptionHeaderTitle, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
-                  Product Description
-                </Text>
-              </View>
-              <Text style={[styles.descriptionBodyText, { color: isDark ? '#CBD5E1' : '#334155' }]}>
-                {description}
-              </Text>
-            </View>
-          )}
-
-          {/* ── Technical Specifications Table ── */}
-          <View style={styles.specsSection}>
-            <Text style={[styles.specsSectionTitle, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
-              Technical Specifications
+          {/* ── Amazon "About this item" ── */}
+          <View style={[styles.amazonAboutSection, { borderTopColor: isDark ? '#334155' : '#E7E7E7' }]}>
+            <Text style={[styles.amazonAboutHeading, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+              About this item
             </Text>
 
-            <View style={[styles.specsTableContainer, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+            <View style={styles.amazonBulletRow}>
+              <Text style={[styles.amazonBulletDot, { color: isDark ? '#94A3B8' : '#0F1111' }]}>•</Text>
+              <Text style={[styles.amazonBulletText, { color: isDark ? '#CBD5E1' : '#333333' }]}>
+                <Text style={{ fontFamily: 'Inter_700Bold' }}>Direct Manufacturer Supply:</Text> Sourced authentically with direct warranty protection and quality testing.
+              </Text>
+            </View>
+
+            <View style={styles.amazonBulletRow}>
+              <Text style={[styles.amazonBulletDot, { color: isDark ? '#94A3B8' : '#0F1111' }]}>•</Text>
+              <Text style={[styles.amazonBulletText, { color: isDark ? '#CBD5E1' : '#333333' }]}>
+                <Text style={{ fontFamily: 'Inter_700Bold' }}>GST Tax Invoice:</Text> Full tax invoice provided for eligible input tax credit (ITC) on commercial and contractor orders.
+              </Text>
+            </View>
+
+            <View style={styles.amazonBulletRow}>
+              <Text style={[styles.amazonBulletDot, { color: isDark ? '#94A3B8' : '#0F1111' }]}>•</Text>
+              <Text style={[styles.amazonBulletText, { color: isDark ? '#CBD5E1' : '#333333' }]}>
+                <Text style={{ fontFamily: 'Inter_700Bold' }}>Site Logistics & Dispatch:</Text> Secured bulk packaging with reliable on-site tracking and project delivery support.
+              </Text>
+            </View>
+
+            {Boolean(description) && (
+              <View style={styles.amazonBulletRow}>
+                <Text style={[styles.amazonBulletDot, { color: isDark ? '#94A3B8' : '#0F1111' }]}>•</Text>
+                <Text style={[styles.amazonBulletText, { color: isDark ? '#CBD5E1' : '#333333' }]}>
+                  {description}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* ── Amazon Technical Details Table ── */}
+          <View style={styles.specsSection}>
+            <Text style={[styles.amazonAboutHeading, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+              Technical Details
+            </Text>
+
+            <View style={[styles.specsTableContainer, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#D5D9D9' }]}>
               {Boolean(brand) && (
-                <View style={styles.specsTableRow}>
-                  <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Brand / Manufacturer</Text>
-                  <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>{brand}</Text>
+                <View style={[styles.specsTableRow, { backgroundColor: isDark ? '#0F172A' : '#F7FAFA' }]}>
+                  <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>Brand / Manufacturer</Text>
+                  <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>{brand}</Text>
                 </View>
               )}
 
               {Boolean(sku) && (
-                <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#F1F5F9' }]}>
-                  <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>SKU / Item Code</Text>
-                  <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>{sku}</Text>
+                <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#E7E7E7' }]}>
+                  <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>SKU / Item Code</Text>
+                  <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>{sku}</Text>
                 </View>
               )}
 
-              <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#F1F5F9' }]}>
-                <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Unit Packaging</Text>
-                <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>{unit}</Text>
+              <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#E7E7E7', backgroundColor: isDark ? '#0F172A' : '#F7FAFA' }]}>
+                <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>Unit Packaging</Text>
+                <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>{unit}</Text>
               </View>
 
-              <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#F1F5F9' }]}>
-                <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Minimum Order (MOQ)</Text>
-                <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>{moq} {unit}{moq > 1 ? 's' : ''}</Text>
+              <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#E7E7E7' }]}>
+                <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>Minimum Order (MOQ)</Text>
+                <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>{moq} {unit}{moq > 1 ? 's' : ''}</Text>
               </View>
 
               {Boolean((passedProduct as any)?.hsnCode) && (
-                <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#F1F5F9' }]}>
-                  <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>HSN Code</Text>
-                  <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>{(passedProduct as any).hsnCode}</Text>
+                <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#E7E7E7', backgroundColor: isDark ? '#0F172A' : '#F7FAFA' }]}>
+                  <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>HSN Code</Text>
+                  <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>{(passedProduct as any).hsnCode}</Text>
                 </View>
               )}
 
               {Boolean((passedProduct as any)?.gstRate) && (
-                <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#F1F5F9' }]}>
-                  <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>GST Rate</Text>
-                  <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>{(passedProduct as any).gstRate}%</Text>
+                <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#E7E7E7' }]}>
+                  <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>GST Rate</Text>
+                  <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>{(passedProduct as any).gstRate}%</Text>
                 </View>
               )}
 
@@ -1186,36 +1390,54 @@ export function ProductDetailScreen({ route, navigation }: any) {
               {passedProduct?.specifications &&
                 typeof passedProduct.specifications === 'object' &&
                 Object.entries(passedProduct.specifications).map(([key, val], idx) => (
-                  <View key={`spec_${idx}`} style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#F1F5F9' }]}>
-                    <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>{key}</Text>
-                    <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>{String(val)}</Text>
+                  <View key={`spec_${idx}`} style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#E7E7E7', backgroundColor: idx % 2 === 0 ? (isDark ? '#0F172A' : '#F7FAFA') : 'transparent' }]}>
+                    <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>{key}</Text>
+                    <Text style={[styles.specsTableValue, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>{String(val)}</Text>
                   </View>
                 ))}
 
-              <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#F1F5F9' }]}>
-                <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Stock Status</Text>
-                <Text style={[styles.specsTableValue, { color: isInStock ? '#059669' : '#EF4444' }]}>
+              <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#E7E7E7' }]}>
+                <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>Stock Status</Text>
+                <Text style={[styles.specsTableValue, { color: isInStock ? '#007600' : '#B12704', fontFamily: 'Inter_700Bold' }]}>
                   {isInStock ? `In Stock (${stockQty} ${unit}${stockQty > 1 ? 's' : ''})` : 'Out of Stock'}
                 </Text>
               </View>
             </View>
           </View>
 
-          {/* ── Related Products Section ── */}
-          {relatedProducts.length > 0 && (
-            <View style={styles.relatedSection}>
-              <View style={styles.relatedHeaderRow}>
-                <Text style={[styles.relatedSectionTitle, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
-                  Related Products
+          {/* ── Amazon Related Products: "Customers who viewed this item also viewed" ── */}
+          <View style={styles.relatedSection}>
+            <View style={styles.relatedHeaderRow}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={[styles.amazonRelatedTitle, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
+                  Customers who viewed this item also viewed
                 </Text>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('MainTabs', { screen: 'CategoriesTab' })}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.relatedSeeAllText}>See All →</Text>
-                </TouchableOpacity>
+                <Text style={[styles.amazonRelatedSubtitle, { color: isDark ? '#94A3B8' : '#565959' }]} numberOfLines={1}>
+                  Related products in {(passedProduct as any)?.subcategoryName || (passedProduct as any)?.categoryName || 'this category'}
+                </Text>
               </View>
+              <TouchableOpacity
+                onPress={handleViewAllRelated}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.amazonSeeAllLink}>See all ›</Text>
+              </TouchableOpacity>
+            </View>
 
+            {isLoadingRelated ? (
+              <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color="#007185" />
+                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: isDark ? '#94A3B8' : '#565959', marginTop: 6 }}>
+                  Finding related products...
+                </Text>
+              </View>
+            ) : relatedProducts.length === 0 ? (
+              <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: isDark ? '#94A3B8' : '#565959' }}>
+                  No other items in this specific category yet.
+                </Text>
+              </View>
+            ) : (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -1261,37 +1483,54 @@ export function ProductDetailScreen({ route, navigation }: any) {
                         });
                       }}
                       activeOpacity={0.85}
-                      style={[styles.relatedCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}
+                      style={[styles.amazonRelatedCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#D5D9D9' }]}
                     >
-                      <View style={[styles.relatedImageWrap, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]}>
+                      <View style={[styles.amazonRelatedImageWrap, { backgroundColor: isDark ? '#0F172A' : '#FFFFFF' }]}>
                         <ProductImageItem
                           uri={relImg}
                           fallbackUri={resolvedFallback}
-                          style={styles.relatedImage}
+                          style={styles.amazonRelatedImage}
                         />
-                        {relDiscount > 0 && (
-                          <View style={styles.relatedDiscountTag}>
-                            <Text style={styles.relatedDiscountTagText}>{relDiscount}% OFF</Text>
+                        {hasRelDiscount && (
+                          <View style={styles.amazonRelatedDiscountTag}>
+                            <Text style={styles.amazonRelatedDiscountText}>{relDiscount}% off</Text>
                           </View>
                         )}
                       </View>
 
-                      <View style={styles.relatedInfo}>
-                        <Text style={[styles.relatedTitle, { color: isDark ? '#F8FAFC' : '#0F172A' }]} numberOfLines={2}>
+                      <View style={styles.amazonRelatedInfo}>
+                        <Text style={[styles.amazonRelatedItemTitle, { color: isDark ? '#F8FAFC' : '#0F1111' }]} numberOfLines={2}>
                           {relTitle}
                         </Text>
-                        <View style={styles.relatedPriceRow}>
-                          <Text style={[styles.relatedPrice, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
+
+                        {/* Star Rating snippet */}
+                        <View style={styles.amazonRelatedRatingRow}>
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <Ionicons key={`rel_star_${s}`} name="star" size={11} color="#FFA41C" />
+                          ))}
+                          <Text style={[styles.amazonRelatedRatingCount, { color: isDark ? '#94A3B8' : '#007185' }]}>
+                            {relItem.reviewCount || relItem.reviews || 12}
+                          </Text>
+                        </View>
+
+                        <View style={styles.amazonRelatedPriceRow}>
+                          <Text style={[styles.amazonRelatedPrice, { color: isDark ? '#F8FAFC' : '#0F1111' }]}>
                             ₹{formatINR(relPrice)}
                           </Text>
-                          <Text style={[styles.relatedUnit, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          <Text style={[styles.amazonRelatedUnit, { color: isDark ? '#94A3B8' : '#565959' }]}>
                             /{relUnit}
                           </Text>
                         </View>
 
-                        {/* Synchronized Cart Action for Related Product */}
+                        {hasRelDiscount && (
+                          <Text style={[styles.amazonRelatedMrp, { color: isDark ? '#64748B' : '#565959' }]}>
+                            M.R.P.: ₹{formatINR(relComparePrice)}
+                          </Text>
+                        )}
+
+                        {/* Synchronized Cart Action */}
                         {relCartQty > 0 ? (
-                          <View style={styles.relStepperRow}>
+                          <View style={styles.amazonRelStepperRow}>
                             <TouchableOpacity
                               onPress={(e) => {
                                 e?.stopPropagation?.();
@@ -1304,12 +1543,12 @@ export function ProductDetailScreen({ route, navigation }: any) {
                                 );
                               }}
                               activeOpacity={0.7}
-                              style={styles.relStepperBtn}
+                              style={styles.amazonRelStepperBtn}
                               hitSlop={{ top: 8, bottom: 8, left: 6, right: 3 }}
                             >
-                              <Ionicons name="remove" size={12} color="#FFFFFF" />
+                              <Ionicons name="remove" size={13} color="#0F1111" />
                             </TouchableOpacity>
-                            <Text style={styles.relStepperQty}>{relCartQty}</Text>
+                            <Text style={styles.amazonRelStepperQty}>{relCartQty}</Text>
                             <TouchableOpacity
                               onPress={(e) => {
                                 e?.stopPropagation?.();
@@ -1321,10 +1560,10 @@ export function ProductDetailScreen({ route, navigation }: any) {
                                 );
                               }}
                               activeOpacity={0.7}
-                              style={styles.relStepperBtn}
+                              style={styles.amazonRelStepperBtn}
                               hitSlop={{ top: 8, bottom: 8, left: 3, right: 6 }}
                             >
-                              <Ionicons name="add" size={12} color="#FFFFFF" />
+                              <Ionicons name="add" size={13} color="#0F1111" />
                             </TouchableOpacity>
                           </View>
                         ) : (
@@ -1339,10 +1578,9 @@ export function ProductDetailScreen({ route, navigation }: any) {
                               );
                             }}
                             activeOpacity={0.8}
-                            style={styles.relAddBtn}
+                            style={styles.amazonRelAddBtn}
                           >
-                            <Ionicons name="add" size={12} color="#FFFFFF" />
-                            <Text style={styles.relAddText}>Add</Text>
+                            <Text style={styles.amazonRelAddText}>Add to Cart</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -1350,8 +1588,8 @@ export function ProductDetailScreen({ route, navigation }: any) {
                   );
                 })}
               </ScrollView>
-            </View>
-          )}
+            )}
+          </View>
           {/* ── Customer Reviews & Ratings Section ── */}
           <View style={{ marginTop: 24, paddingHorizontal: 16 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -1852,192 +2090,547 @@ const styles = StyleSheet.create({
 
   mainContentPadding: {
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 12,
   },
-  topBadgesRow: {
+
+  /* ── Amazon Brand Link ── */
+  amazonBrandLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  amazonBrandLinkText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: '#007185',
+  },
+
+  /* ── Amazon Product Title ── */
+  amazonProductTitle: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 17,
+    lineHeight: 23,
+    letterSpacing: -0.2,
+  },
+
+  /* ── Amazon Star Rating ── */
+  amazonRatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 8,
+  },
+  amazonStarsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  amazonRatingVal: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+    marginLeft: 3,
+  },
+  amazonRatingsCountText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12.5,
+    color: '#007185',
+  },
+
+  /* ── Amazon Badges ── */
+  amazonBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 8,
+    marginTop: 8,
+    marginBottom: 10,
   },
-  verifiedManufacturerPill: {
+  amazonChoiceBadge: {
+    backgroundColor: '#232F3E',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 3,
   },
-  verifiedManufacturerPillText: {
-    fontFamily: 'Inter_600SemiBold',
+  amazonChoiceText: {
+    fontFamily: 'Inter_700Bold',
     fontSize: 11,
-    color: '#2563EB',
+    color: '#FFFFFF',
   },
-  deliveryBadgePill: {
+  amazonChoiceSub: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
+    color: '#FF9900',
+    marginLeft: 3,
+  },
+  amazonChoiceCat: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 10.5,
+    color: '#FFFFFF',
+    marginLeft: 4,
+    maxWidth: 160,
+  },
+  amazonExpressBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
     backgroundColor: '#FEF3C7',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 3,
     borderWidth: 1,
     borderColor: '#FDE68A',
   },
-  deliveryBadgePillText: {
+  amazonExpressBadgeText: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 10.5,
+    fontSize: 10,
     color: '#B45309',
     letterSpacing: 0.3,
   },
-  skuBadgePill: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+  amazonSkuBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 3,
     borderWidth: 1,
   },
-  skuBadgePillText: {
+  amazonSkuBadgeText: {
     fontFamily: 'Inter_500Medium',
-    fontSize: 11,
-  },
-  productTitleText: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 20,
-    marginTop: 10,
-    lineHeight: 26,
-  },
-  ratingStockRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  ratingLeftGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  ratingNumberText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 13,
-  },
-  ratingReviewsText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12.5,
-  },
-  stockRightGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  greenStockDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#10B981',
-  },
-  inStockText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12.5,
-    color: '#059669',
+    fontSize: 10.5,
   },
 
-  /* ── Perfectly Aligned Price Card ── */
-  priceCard: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 16,
-    marginTop: 14,
+  /* ── Amazon Pricing Section ── */
+  amazonPriceSection: {
+    paddingTop: 10,
+    borderTopWidth: 1,
   },
-  priceRowContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  priceLeftCol: {
-    flex: 1,
-  },
-  priceMainGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 4,
-  },
-  priceCurrencySign: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 20,
-  },
-  priceMainAmount: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 26,
-  },
-  priceUnitSlash: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 14,
-    marginLeft: 2,
-  },
-  discountTagPill: {
-    backgroundColor: '#FFF1F2',
-    borderColor: '#FECDD3',
-    borderWidth: 1,
-    borderRadius: 6,
+  amazonDealBadge: {
+    backgroundColor: '#CC0C39',
+    alignSelf: 'flex-start',
     paddingHorizontal: 8,
-    paddingVertical: 2.5,
-    marginLeft: 8,
+    paddingVertical: 3.5,
+    borderRadius: 3,
+    marginBottom: 6,
   },
-  discountTagPillText: {
+  amazonDealBadgeText: {
     fontFamily: 'Inter_700Bold',
     fontSize: 11,
-    color: '#E11D48',
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
-  mrpSavingsRow: {
+  amazonPriceMainRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
+    alignItems: 'baseline',
     gap: 8,
-    marginTop: 6,
   },
-  mrpStrikethroughText: {
+  amazonDiscountPct: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 26,
+    color: '#CC0C39',
+  },
+  amazonPriceDisplayGroup: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  amazonCurrencySymbol: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
+    marginRight: 1,
+  },
+  amazonMainPrice: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 30,
+    lineHeight: 36,
+  },
+  amazonPriceUnitText: {
     fontFamily: 'Inter_500Medium',
     fontSize: 13,
+    marginLeft: 3,
+  },
+  amazonMrpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  amazonMrpLabel: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+  },
+  amazonMrpValue: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
     textDecorationLine: 'line-through',
   },
-  saveBadgePill: {
-    backgroundColor: '#DCFCE7',
+  amazonTaxesText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11.5,
+    marginTop: 3,
+  },
+  amazonItcRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 3,
+  },
+  amazonTaxInvoiceText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11.5,
+    color: '#007185',
+  },
+
+  /* ── Amazon Offers ── */
+  amazonOffersBlock: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  amazonOffersHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  amazonOffersTitle: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 14,
+  },
+  amazonOffersScroll: {
+    gap: 10,
+    paddingRight: 16,
+  },
+  amazonOfferCard: {
+    width: 175,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  amazonOfferCardTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  amazonOfferCardBody: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  amazonOfferLink: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+    color: '#007185',
+    marginTop: 6,
+  },
+
+  /* ── Amazon 4-Pill Trust Badges ── */
+  amazonTrustBadgesRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    marginVertical: 14,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+  },
+  amazonTrustBadgeItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  amazonTrustCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  amazonTrustText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 10.5,
+    textAlign: 'center',
+    lineHeight: 13,
+  },
+
+  /* ── Amazon Buy Box ── */
+  amazonBuyBox: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 14,
+    marginBottom: 16,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  amazonBuyBoxPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 6,
+  },
+  amazonBuyBoxPrice: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 22,
+  },
+  amazonBuyBoxUnit: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12.5,
+    marginLeft: 3,
+  },
+  amazonBuyBoxLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  amazonBuyBoxLocationText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    color: '#007185',
+  },
+  amazonBuyBoxPincodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  amazonPincodeInput: {
+    flex: 1,
+    height: 38,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    fontSize: 12.5,
+    fontFamily: 'Inter_500Medium',
+  },
+  amazonPincodeApplyBtn: {
+    backgroundColor: '#F0F2F2',
+    borderColor: '#D5D9D9',
+    borderWidth: 1,
+    height: 38,
+    paddingHorizontal: 14,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  amazonPincodeApplyText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    color: '#0F1111',
+  },
+  amazonPincodeResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 8,
+  },
+  amazonPincodeResultText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11.5,
+    color: '#007600',
+  },
+  amazonDeliveryDateTitle: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  amazonOrderWithinText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11.5,
+    marginBottom: 10,
+  },
+  amazonInStockText: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 17,
+    color: '#007600',
+    marginBottom: 2,
+  },
+  amazonLowStockText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11.5,
+    color: '#B12704',
+    marginBottom: 6,
+  },
+  amazonMerchantTable: {
+    marginVertical: 6,
+    gap: 3,
+  },
+  amazonMerchantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  amazonMerchantLabel: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11.5,
+    width: 75,
+  },
+  amazonMerchantVal: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11.5,
+  },
+  amazonQtyBlock: {
+    marginTop: 8,
+  },
+  amazonQtyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  amazonQtyTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+  },
+  amazonQtyStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 2,
+  },
+  amazonQtyBtn: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  amazonQtyValueText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+    minWidth: 28,
+    textAlign: 'center',
+  },
+  amazonQuickAddPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  amazonQuickAddLabel: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11.5,
+  },
+  amazonQuickAddPill: {
+    borderWidth: 1,
+    borderRadius: 6,
     paddingHorizontal: 8,
-    paddingVertical: 2.5,
+    paddingVertical: 3.5,
+  },
+  amazonQuickAddPillText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11,
+  },
+  amazonCalcSummaryBox: {
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 6,
   },
-  saveBadgePillText: {
+  amazonCalcSummaryText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+  },
+  amazonYellowBtn: {
+    backgroundColor: '#FFD814',
+    borderColor: '#FCD200',
+    borderWidth: 1,
+    borderRadius: 20,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+  },
+  amazonYellowBtnText: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 11,
-    color: '#15803D',
+    fontSize: 13.5,
+    color: '#0F1111',
   },
-  priceCardDivider: {
-    height: 1,
-    marginVertical: 12,
+  amazonOrangeBtn: {
+    backgroundColor: '#FFA41C',
+    borderColor: '#FF8F00',
+    borderWidth: 1,
+    borderRadius: 20,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
   },
-  gstNoteRow: {
+  amazonOrangeBtnText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13.5,
+    color: '#0F1111',
+  },
+  amazonBtnDisabled: {
+    backgroundColor: '#E0E0E0',
+    borderColor: '#D0D0D0',
+    opacity: 0.6,
+  },
+  amazonRfqBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 20,
+    height: 38,
+    marginTop: 8,
+  },
+  amazonRfqBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
+  amazonSecureTxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    marginTop: 10,
+  },
+  amazonSecureTxText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11.5,
+    color: '#007185',
+  },
+
+  /* ── Amazon "About this item" ── */
+  amazonAboutSection: {
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+  },
+  amazonAboutHeading: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 15,
+    marginBottom: 8,
+  },
+  amazonBulletRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 6,
+    marginBottom: 6,
   },
-  gstNoteText: {
+  amazonBulletDot: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  amazonBulletText: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 11.5,
+    fontSize: 12.5,
+    lineHeight: 18,
     flex: 1,
-    lineHeight: 16,
   },
 
   /* ── Wholesale Bulk Tiers Matrix ── */
   tierMatrixCard: {
     borderWidth: 1,
-    borderRadius: 14,
-    padding: 16,
-    marginTop: 14,
+    borderRadius: 8,
+    padding: 14,
+    marginVertical: 12,
   },
   tierMatrixHeader: {
     flexDirection: 'row',
@@ -2046,24 +2639,24 @@ const styles = StyleSheet.create({
   },
   tierMatrixTitle: {
     fontFamily: 'Poppins_700Bold',
-    fontSize: 14.5,
+    fontSize: 14,
   },
   tierMatrixSubtitle: {
     fontFamily: 'Inter_400Regular',
     fontSize: 11.5,
-    marginTop: 3,
-    marginBottom: 12,
+    marginTop: 2,
+    marginBottom: 10,
   },
   tierTable: {
-    borderRadius: 10,
+    borderRadius: 6,
     borderWidth: 1,
     overflow: 'hidden',
   },
   tierTableHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderBottomWidth: 1,
   },
   tierColHeader: {
@@ -2074,8 +2667,8 @@ const styles = StyleSheet.create({
   tierTableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
     borderBottomWidth: 1,
   },
   activeTierDot: {
@@ -2086,7 +2679,7 @@ const styles = StyleSheet.create({
   },
   tierRangeText: {
     fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
+    fontSize: 11.5,
   },
   tierRangeTextActive: {
     fontFamily: 'Inter_700Bold',
@@ -2094,16 +2687,16 @@ const styles = StyleSheet.create({
   },
   tierPriceText: {
     fontFamily: 'Poppins_600SemiBold',
-    fontSize: 13,
+    fontSize: 12.5,
   },
   tierPriceTextActive: {
     fontFamily: 'Poppins_700Bold',
     color: '#047857',
   },
   tierDiscountBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   tierBaseBadge: {
     backgroundColor: '#F1F5F9',
@@ -2113,7 +2706,7 @@ const styles = StyleSheet.create({
   },
   tierDiscountBadgeText: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 10.5,
+    fontSize: 10,
   },
   tierBaseBadgeText: {
     color: '#64748B',
@@ -2122,313 +2715,19 @@ const styles = StyleSheet.create({
     color: '#15803D',
   },
 
-  /* ── Order Calculation Box ── */
-  calcBoxCard: {
-    borderWidth: 1,
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginTop: 14,
-  },
-  calcThreeColsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  calcCol: {
-    alignItems: 'center',
-  },
-  calcColHeader: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 10,
-    color: '#94A3B8',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  calcColValue: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 13.5,
-  },
-  calcColTotalValue: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 15,
-  },
-  calcSymbol: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: '#94A3B8',
-  },
-  calcSavingsBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderTopWidth: 1,
-  },
-  calcSavingsBarText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11.5,
-    color: '#059669',
-    flex: 1,
-  },
-
-  /* ── Select Quantity ── */
-  procurementVolumeCard: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 16,
-    marginTop: 14,
-  },
-  volumeHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  volumeTitleBlock: {
-    flex: 1,
-  },
-  volumeMainTitle: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 14.5,
-  },
-  moqSubtitle: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  moqBold: {
-    fontFamily: 'Inter_700Bold',
-  },
-  stepperContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    padding: 3,
-  },
-  stepperBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 1,
-  },
-  stepperValueInput: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 15,
-    minWidth: 36,
-    textAlign: 'center',
-    paddingVertical: 0,
-  },
-  quickAddRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 14,
-  },
-  quickAddLabel: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-  },
-  quickAddPill: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  quickAddPillText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11.5,
-    color: '#2563EB',
-  },
-
-  /* ── Delivery Feasibility ── */
-  feasibilityCard: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 16,
-    marginTop: 14,
-  },
-  feasibilityHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  feasibilityHeaderTitle: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 14,
-  },
-  pincodeInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-  },
-  pincodeTextInput: {
-    flex: 1,
-    height: 42,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    fontSize: 13.5,
-    fontFamily: 'Inter_500Medium',
-  },
-  pincodeCheckBtn: {
-    backgroundColor: '#E31E24',
-    height: 42,
-    paddingHorizontal: 18,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pincodeCheckBtnText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 13,
-    color: '#FFFFFF',
-  },
-  pincodeVerifiedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 10,
-  },
-  pincodeVerifiedText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-    color: '#059669',
-  },
-  trustGridDivider: {
-    height: 1,
-    marginVertical: 12,
-  },
-  trustGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    rowGap: 8,
-  },
-  trustItem: {
-    width: '50%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  trustItemText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    flex: 1,
-  },
-
-  /* ── Supplier Card ── */
-  supplierCard: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 14,
-  },
-  supplierTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  supplierIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  supplierInfoCol: {
-    flex: 1,
-  },
-  supplierNameVerifiedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  supplierNameText: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 13.5,
-  },
-  supplierLocRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  supplierLocText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-  },
-  supplierStarsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  supplierStarsText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 11,
-    color: '#F59E0B',
-  },
-  requestRfqOutlineBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 9,
-    marginTop: 12,
-  },
-  requestRfqOutlineBtnText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-  },
-
-  /* ── Description ── */
-  descriptionCard: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 16,
-    marginTop: 14,
-  },
-  descriptionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  descriptionHeaderTitle: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 14,
-  },
-  descriptionBodyText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    lineHeight: 20,
-  },
-
   /* ── Specifications ── */
   specsSection: {
-    marginTop: 16,
-  },
-  specsSectionTitle: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 14.5,
-    marginBottom: 10,
+    marginTop: 14,
   },
   specsTableContainer: {
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 6,
     overflow: 'hidden',
   },
   specsTableRow: {
     flexDirection: 'row',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     justifyContent: 'space-between',
     alignItems: 'center',
   },
@@ -2447,7 +2746,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
-  /* ── Related Products ── */
+  /* ── Amazon Related Products ── */
   relatedSection: {
     marginTop: 20,
     marginBottom: 10,
@@ -2455,109 +2754,134 @@ const styles = StyleSheet.create({
   relatedHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    alignItems: 'flex-start',
+    marginBottom: 10,
   },
-  relatedSectionTitle: {
+  amazonRelatedTitle: {
     fontFamily: 'Poppins_700Bold',
     fontSize: 14.5,
+    lineHeight: 19,
   },
-  relatedSeeAllText: {
+  amazonRelatedSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  amazonSeeAllLink: {
     fontFamily: 'Inter_700Bold',
     fontSize: 12,
-    color: '#0038A8',
+    color: '#007185',
   },
   relatedListContent: {
-    gap: 12,
+    gap: 10,
     paddingRight: 16,
   },
-  relatedCard: {
-    width: 140,
+  amazonRelatedCard: {
+    width: 145,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 8,
     overflow: 'hidden',
   },
-  relatedImageWrap: {
+  amazonRelatedImageWrap: {
     width: '100%',
-    height: 110,
+    height: 120,
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 8,
   },
-  relatedImage: {
+  amazonRelatedImage: {
     width: '100%',
     height: '100%',
   },
-  relatedDiscountTag: {
+  amazonRelatedDiscountTag: {
     position: 'absolute',
     top: 6,
     left: 6,
-    backgroundColor: '#EF4444',
+    backgroundColor: '#CC0C39',
     paddingHorizontal: 5,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 2,
   },
-  relatedDiscountTagText: {
+  amazonRelatedDiscountText: {
     fontFamily: 'Inter_700Bold',
     fontSize: 9,
     color: '#FFFFFF',
+    textTransform: 'uppercase',
   },
-  relatedInfo: {
-    padding: 10,
+  amazonRelatedInfo: {
+    padding: 9,
   },
-  relatedTitle: {
+  amazonRelatedItemTitle: {
     fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-    lineHeight: 16,
-    height: 32,
+    fontSize: 11.5,
+    lineHeight: 15,
+    height: 30,
   },
-  relatedPriceRow: {
+  amazonRelatedRatingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    gap: 2,
+    marginVertical: 4,
   },
-  relatedPrice: {
+  amazonRelatedRatingCount: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 10,
+    marginLeft: 3,
+  },
+  amazonRelatedPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  amazonRelatedPrice: {
     fontFamily: 'Poppins_700Bold',
     fontSize: 13.5,
   },
-  relatedUnit: {
+  amazonRelatedUnit: {
     fontFamily: 'Inter_400Regular',
-    fontSize: 10.5,
+    fontSize: 10,
     marginLeft: 2,
   },
-  relAddBtn: {
+  amazonRelatedMrp: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 10,
+    textDecorationLine: 'line-through',
+    marginTop: 1,
+  },
+  amazonRelAddBtn: {
     marginTop: 8,
-    flexDirection: 'row',
+    backgroundColor: '#FFD814',
+    borderColor: '#FCD200',
+    borderWidth: 1,
+    paddingVertical: 5,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#E31E24',
-    paddingVertical: 5,
-    borderRadius: 6,
-    gap: 3,
   },
-  relAddText: {
-    fontFamily: 'Inter_600SemiBold',
+  amazonRelAddText: {
+    fontFamily: 'Inter_700Bold',
     fontSize: 11,
-    color: '#FFFFFF',
+    color: '#0F1111',
   },
-  relStepperRow: {
+  amazonRelStepperRow: {
     marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#E31E24',
-    borderRadius: 6,
+    backgroundColor: '#F0F2F2',
+    borderColor: '#D5D9D9',
+    borderWidth: 1,
+    borderRadius: 14,
     paddingHorizontal: 6,
-    height: 26,
+    height: 28,
   },
-  relStepperBtn: {
+  amazonRelStepperBtn: {
     padding: 3,
   },
-  relStepperQty: {
+  amazonRelStepperQty: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 11,
-    color: '#FFFFFF',
+    fontSize: 11.5,
+    color: '#0F1111',
   },
 
   /* ── Sticky Bottom Bar ── */

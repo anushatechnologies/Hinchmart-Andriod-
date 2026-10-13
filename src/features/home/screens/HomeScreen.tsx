@@ -110,7 +110,7 @@ const VALUE_BADGES: ValueBadgeItem[] = [
     points: [
       'Direct sourcing from authorized OEM brands',
       'Batch test certificates & Mill Test Certificates (MTC)',
-      '100% quality guarantee with instant replacement warranty',
+      '100% quality guarantee with direct manufacturer warranty',
     ],
     primaryCtaText: 'Browse Verified Brands',
     primaryRoute: 'Brands',
