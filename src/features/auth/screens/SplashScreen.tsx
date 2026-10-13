@@ -679,7 +679,7 @@ export function SplashScreen({ navigation }: any) {
           <Text style={styles.footerBrand}>Nexus Technologies</Text>
         </Text>
         <View style={styles.versionBadge}>
-          <Text style={styles.versionText}>v1.0.28</Text>
+          <Text style={styles.versionText}>v1.0.29</Text>
         </View>
       </Animated.View>
     </View>
