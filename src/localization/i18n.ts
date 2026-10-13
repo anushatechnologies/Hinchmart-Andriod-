@@ -72,7 +72,7 @@ export function translate(path: string, params?: Record<string, string | number>
     return path;
   }
 
-  if (params) {
+  if (params && typeof params === 'object') {
     return Object.entries(params).reduce((str, [key, val]) => {
       return str.replace(new RegExp(`{{${key}}}`, 'g'), String(val));
     }, current);

@@ -1,281 +1,506 @@
 /**
- * HINCH MART — Search Screen with Real-Time Results & Voice Search
+ * HINCH MART — Search Screen (Clean Initial State + Animated Placeholder)
+ * Features:
+ * - Clean initial state: Starts clean with ONLY the search interface (no default suggestions or discovery cards)
+ * - Animated cycling placeholder: Smooth, lightweight cycling through search categories
+ * - Clean Search Bar: Back button + Search icon + text input + clear button (no barcode/camera/mic)
+ * - Live search functionality: Real backend API search, skeleton loader, and responsive 2-column grid / list toggle
  */
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  FlatList,
+  Platform,
+  StatusBar,
+  useWindowDimensions,
+  Animated,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme';
-import { Screen, Header } from '../../../components/layout/Screen';
-import { SearchBar } from '../../../components/ui/SearchBar';
-import { Chip } from '../../../components/ui/Badge';
-import { Card } from '../../../components/ui/Card';
 import { ProductCard } from '../../../components/cards/ProductCard';
-import { Product } from '../../../types/product.types';
+import { ApiProduct } from '../../../types/product.types';
+import { searchApi } from '../../../services/api/search.api';
+import { ProductCardSkeleton } from '../../../components/feedback/SkeletonLoader';
 
-const TRENDING_KEYWORDS = [
-  'Steel Rebar',
-  'Portland Cement 50kg',
-  'Excavator Rental',
-  'Armored Cable 4-Core',
-  'Scaffolding Clamps',
-  'PPE Hard Hats',
+const SEARCH_PLACEHOLDERS = [
+  'Search building materials...',
+  'Search power tools...',
+  'Search cement & concrete...',
+  'Search pipes & fittings...',
+  'Search electrical & lights...',
 ];
 
-const RECENT_SEARCHES = ['Tata Steel', 'Concrete Mixer', 'Bosch Drill 800W'];
+export function SearchScreen({ navigation, route }: any) {
+  const { theme, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const gridCardWidth = Math.floor((windowWidth - 32 - 12) / 2);
 
-const ALL_SEARCH_PRODUCTS: Product[] = [
-  {
-    id: 'p1',
-    name: 'Grade 50 High-Yield Steel Rebar 12mm',
-    slug: 'steel-rebar-12mm',
-    sku: 'ST-12MM-50',
-    description: 'High tensile strength steel rebar ideal for reinforced concrete foundations.',
-    shortDescription: '12mm Steel Rebar Grade 50',
-    images: [{ id: 'i1', url: 'https://images.unsplash.com/photo-1535813547-99c456a41d4a?auto=format&fit=crop&w=600&q=80', thumbnail: '', alt: '', isPrimary: true, order: 1 }],
-    category: { id: 'c2', name: 'Steel', slug: 'steel', icon: '', image: '', description: '', productCount: 120, parentId: null, subCategories: [], order: 1 },
-    subCategory: { id: 'sc1', name: 'Rebar', slug: 'rebar', image: '', productCount: 40, parentId: 'c2' },
-    brand: { id: 'b1', name: 'Tata Tiscon', logo: '', slug: 'tata', description: '', productCount: 50, isVerified: true },
-    vendor: { id: 'v1', name: 'Global Metals Co', logo: '', rating: 4.9, isVerified: true, location: 'Dubai, UAE' },
-    price: { amount: 850, compareAtPrice: 950, currency: 'USD', discount: 11, discountType: 'percentage', bulkPricing: [] },
-    variants: [],
-    specifications: [],
-    rating: { average: 4.8, count: 124, distribution: { 1: 0, 2: 2, 3: 5, 4: 20, 5: 97 } },
-    reviewCount: 124,
-    stock: { available: 500, isInStock: true, lowStockThreshold: 20, isLowStock: false },
-    tags: ['steel', 'rebar'],
-    isFeatured: true,
-    isTrending: true,
-    isDealOfDay: false,
-    minOrderQuantity: 5,
-    maxOrderQuantity: 1000,
-    unit: 'Ton',
-    weight: 1000,
-    weightUnit: 'kg',
-    dimensions: { length: 12, width: 0.012, height: 0.012, unit: 'cm' },
-    warranty: '10 Years',
-    returnPolicy: '14 Days Return',
-    buyingGuide: '',
-    faqs: [],
-    relatedProducts: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'p2',
-    name: 'Portland OPC 53 Grade Cement 50kg Bag',
-    slug: 'portland-cement-50kg',
-    sku: 'CEM-OPC-53',
-    description: 'Premium quality Ordinary Portland Cement for structural concreting.',
-    shortDescription: 'OPC 53 Grade Cement',
-    images: [{ id: 'i2', url: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=600&q=80', thumbnail: '', alt: '', isPrimary: true, order: 1 }],
-    category: { id: 'c1', name: 'Cement', slug: 'cement', icon: '', image: '', description: '', productCount: 200, parentId: null, subCategories: [], order: 2 },
-    subCategory: { id: 'sc2', name: 'OPC', slug: 'opc', image: '', productCount: 60, parentId: 'c1' },
-    brand: { id: 'b2', name: 'UltraTech', logo: '', slug: 'ultratech', description: '', productCount: 80, isVerified: true },
-    vendor: { id: 'v2', name: 'Apex Building Supplies', logo: '', rating: 4.7, isVerified: true, location: 'Riyadh, KSA' },
-    price: { amount: 12, compareAtPrice: 15, currency: 'USD', discount: 20, discountType: 'percentage', bulkPricing: [] },
-    variants: [],
-    specifications: [],
-    rating: { average: 4.9, count: 310, distribution: { 1: 0, 2: 1, 3: 4, 4: 35, 5: 270 } },
-    reviewCount: 310,
-    stock: { available: 2000, isInStock: true, lowStockThreshold: 100, isLowStock: false },
-    tags: ['cement', 'opc'],
-    isFeatured: true,
-    isTrending: true,
-    isDealOfDay: true,
-    minOrderQuantity: 50,
-    maxOrderQuantity: 5000,
-    unit: 'Bag',
-    weight: 50,
-    weightUnit: 'kg',
-    dimensions: { length: 60, width: 40, height: 15, unit: 'cm' },
-    warranty: 'Standard Storage Warranty',
-    returnPolicy: 'No Return on Open Bags',
-    buyingGuide: '',
-    faqs: [],
-    relatedProducts: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+  const initialQuery = route?.params?.query || '';
+  const [query, setQuery] = useState(initialQuery);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<ApiProduct[]>([]);
+  const [hasSearched, setHasSearched] = useState(Boolean(initialQuery));
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-export function SearchScreen({ navigation }: any) {
-  const { theme } = useTheme();
-  const [query, setQuery] = useState('');
-  const [showVoiceModal, setShowVoiceModal] = useState(false);
+  // Animated placeholder state & values
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const placeholderFadeAnim = useRef(new Animated.Value(1)).current;
+  const placeholderTranslateAnim = useRef(new Animated.Value(0)).current;
 
-  const filteredProducts = query.trim()
-    ? ALL_SEARCH_PRODUCTS.filter(
-        (p) =>
-          p.name.toLowerCase().includes(query.toLowerCase()) ||
-          p.category.name.toLowerCase().includes(query.toLowerCase()) ||
-          p.tags.some((t) => t.toLowerCase().includes(query.toLowerCase()))
-      )
-    : [];
+  const inputRef = useRef<TextInput>(null);
+  const debounceTimerRef = useRef<any>(null);
 
-  const handleSearchSubmit = (searchTerm: string) => {
-    setQuery(searchTerm);
+  // Cycling animated placeholder text when search input is empty
+  useEffect(() => {
+    if (query.length > 0) return;
+
+    const interval = setInterval(() => {
+      Animated.parallel([
+        Animated.timing(placeholderFadeAnim, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.timing(placeholderTranslateAnim, {
+          toValue: -8,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setPlaceholderIndex((prev) => (prev + 1) % SEARCH_PLACEHOLDERS.length);
+        placeholderTranslateAnim.setValue(8);
+        Animated.parallel([
+          Animated.timing(placeholderFadeAnim, {
+            toValue: 1,
+            duration: 250,
+            useNativeDriver: true,
+          }),
+          Animated.timing(placeholderTranslateAnim, {
+            toValue: 0,
+            duration: 250,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      });
+    }, 2800);
+
+    return () => clearInterval(interval);
+  }, [query.length, placeholderFadeAnim, placeholderTranslateAnim]);
+
+  const performSearch = useCallback(async (searchTerm: string) => {
+    const clean = searchTerm.trim();
+    if (!clean) {
+      setSearchResults([]);
+      setHasSearched(false);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    setHasSearched(true);
+
+    try {
+      const results = await searchApi.searchProducts(clean);
+      setSearchResults(Array.isArray(results) ? results : []);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  // Debounced typing handler
+  const handleQueryChange = (text: string) => {
+    setQuery(text);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    if (!text.trim()) {
+      setSearchResults([]);
+      setHasSearched(false);
+      setIsSearching(false);
+      return;
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      performSearch(text);
+    }, 400);
   };
 
+  const handleClear = () => {
+    setQuery('');
+    setSearchResults([]);
+    setHasSearched(false);
+    setIsSearching(false);
+    inputRef.current?.focus();
+  };
+
+  const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 20);
+
   return (
-    <Screen scrollable={false}>
-      <Header title="Search Marketplace" showBack onBackPress={() => navigation.goBack()} showCart={false} />
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.colors.surface}
+        translucent
+      />
 
-      <View style={styles.paddingBox}>
-        <SearchBar
-          value={query}
-          onChangeText={(text) => setQuery(text)}
-          onSubmit={() => handleSearchSubmit(query)}
-          onClear={() => setQuery('')}
-          onVoicePress={() => setShowVoiceModal(true)}
-          autoFocus
-        />
+      {/* Top Header & Search Bar Container */}
+      <View
+        style={[
+          styles.headerWrapper,
+          {
+            paddingTop: topPadding + 6,
+            backgroundColor: theme.colors.surface,
+            borderBottomColor: theme.colors.border,
+          },
+        ]}
+      >
+        <View style={styles.headerRow}>
+          {/* Back Button */}
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.headerIconBtn}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Go back"
+            accessibilityRole="button"
+          >
+            <Ionicons name="arrow-back" size={24} color={theme.colors.textPrimary} />
+          </TouchableOpacity>
 
-        {query.trim().length > 0 ? (
-          <View style={{ marginTop: 16 }}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, marginBottom: 12 }]}>
-              Search Results ({filteredProducts.length})
-            </Text>
-            {filteredProducts.length > 0 ? (
-              <FlatList
-                data={filteredProducts}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <ProductCard
-                    product={item}
-                    variant="list"
-                    onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
-                  />
-                )}
+          {/* Clean Focused Search Input Box */}
+          <View
+            style={[
+              styles.searchInputContainer,
+              {
+                backgroundColor: isDark ? theme.colors.surfaceVariant : '#F1F3F5',
+                borderColor: theme.colors.border,
+              },
+            ]}
+          >
+            <Ionicons
+              name="search-outline"
+              size={18}
+              color={theme.colors.textSecondary}
+              style={{ marginRight: 8 }}
+            />
+
+            <View style={styles.inputInnerWrapper}>
+              {query.length === 0 && (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.animatedPlaceholderWrap,
+                    {
+                      opacity: placeholderFadeAnim,
+                      transform: [{ translateY: placeholderTranslateAnim }],
+                    },
+                  ]}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.animatedPlaceholderText,
+                      { color: theme.colors.textTertiary },
+                    ]}
+                  >
+                    {SEARCH_PLACEHOLDERS[placeholderIndex]}
+                  </Text>
+                </Animated.View>
+              )}
+
+              <TextInput
+                ref={inputRef}
+                value={query}
+                onChangeText={handleQueryChange}
+                onSubmitEditing={() => performSearch(query)}
+                placeholder=""
+                placeholderTextColor="transparent"
+                style={[styles.textInput, { color: theme.colors.textPrimary }]}
+                returnKeyType="search"
+                autoFocus={!initialQuery}
+                clearButtonMode="never"
               />
-            ) : (
-              <View style={styles.noResultsBox}>
-                <Ionicons name="search" size={36} color={theme.colors.textTertiary} style={{ marginBottom: 8 }} />
-                <Text style={[styles.noResultsTitle, { color: theme.colors.navy }]}>No Products Found</Text>
-                <Text style={{ color: theme.colors.textSecondary, fontSize: 13 }}>
-                  Try searching for "steel", "cement", or "rebar"
-                </Text>
-              </View>
+            </View>
+
+            {query.length > 0 && (
+              <TouchableOpacity
+                onPress={handleClear}
+                style={styles.innerActionBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Clear search input"
+                accessibilityRole="button"
+              >
+                <Ionicons name="close-circle" size={18} color={theme.colors.textTertiary} />
+              </TouchableOpacity>
             )}
           </View>
-        ) : (
-          <View>
-            {/* Recent Searches */}
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Recent Searches</Text>
-            </View>
-            <View style={styles.chipRow}>
-              {RECENT_SEARCHES.map((item, idx) => (
-                <Chip
-                  key={idx}
-                  label={item}
-                  onPress={() => handleSearchSubmit(item)}
-                  style={styles.chipMargin}
-                />
-              ))}
-            </View>
-
-            {/* Trending Searches */}
-            <View style={styles.sectionHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="trending-up" size={18} color={theme.colors.primary} />
-                <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Trending Now</Text>
-              </View>
-            </View>
-            <View style={styles.chipRow}>
-              {TRENDING_KEYWORDS.map((item, idx) => (
-                <Chip
-                  key={idx}
-                  label={item}
-                  onPress={() => handleSearchSubmit(item)}
-                  selected={idx === 0}
-                  style={styles.chipMargin}
-                />
-              ))}
-            </View>
-          </View>
-        )}
+        </View>
       </View>
 
-      {/* Voice Search Modal Shell */}
-      {showVoiceModal && (
-        <View style={[styles.voiceModalOverlay, { backgroundColor: theme.colors.overlay }]}>
-          <Card variant="elevated" style={styles.voiceCard}>
-            <Ionicons name="mic" size={48} color={theme.colors.primary} style={{ alignSelf: 'center', marginBottom: 16 }} />
-            <Text style={[styles.voiceTitle, { color: theme.colors.navy }]}>Listening...</Text>
-            <Text style={[styles.voiceSub, { color: theme.colors.textSecondary }]}>
-              Say something like "Find Steel Rebar 12mm"
+      {/* Content Area */}
+      {isSearching ? (
+        <View style={styles.skeletonContainer}>
+          <View style={styles.resultsHeaderRow}>
+            <View style={[styles.skeletonPill, { backgroundColor: theme.colors.skeleton }]} />
+          </View>
+          <View style={styles.gridRow}>
+            <View style={{ width: gridCardWidth, marginBottom: 12 }}>
+              <ProductCardSkeleton style={{ width: '100%', marginBottom: 0 }} />
+            </View>
+            <View style={{ width: gridCardWidth, marginBottom: 12 }}>
+              <ProductCardSkeleton style={{ width: '100%', marginBottom: 0 }} />
+            </View>
+            <View style={{ width: gridCardWidth, marginBottom: 12 }}>
+              <ProductCardSkeleton style={{ width: '100%', marginBottom: 0 }} />
+            </View>
+            <View style={{ width: gridCardWidth, marginBottom: 12 }}>
+              <ProductCardSkeleton style={{ width: '100%', marginBottom: 0 }} />
+            </View>
+          </View>
+        </View>
+      ) : hasSearched ? (
+        <View style={{ flex: 1 }}>
+          {/* Results Summary Bar */}
+          <View
+            style={[
+              styles.resultsMetaBar,
+              {
+                backgroundColor: theme.colors.surface,
+                borderBottomColor: theme.colors.border,
+              },
+            ]}
+          >
+            <Text style={[styles.resultsCountText, { color: theme.colors.textSecondary }]}>
+              Found <Text style={{ fontWeight: '700', color: theme.colors.textPrimary }}>{searchResults.length}</Text>{' '}
+              results for "{query}"
             </Text>
 
-            <TouchableOpacity
-              onPress={() => setShowVoiceModal(false)}
-              style={[styles.closeVoiceBtn, { backgroundColor: theme.colors.danger }]}
-            >
-              <Text style={{ color: '#FFF', fontFamily: 'Poppins_600SemiBold' }}>Cancel</Text>
-            </TouchableOpacity>
-          </Card>
+            {/* View Mode Toggle: Grid vs List */}
+            <View style={styles.viewToggleGroup}>
+              <TouchableOpacity
+                onPress={() => setViewMode('grid')}
+                style={[
+                  styles.toggleBtn,
+                  viewMode === 'grid' && { backgroundColor: theme.colors.primaryLight },
+                ]}
+                accessibilityLabel="Grid view"
+                accessibilityRole="button"
+              >
+                <Ionicons
+                  name="grid-outline"
+                  size={16}
+                  color={viewMode === 'grid' ? theme.colors.primary : theme.colors.textTertiary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setViewMode('list')}
+                style={[
+                  styles.toggleBtn,
+                  viewMode === 'list' && { backgroundColor: theme.colors.primaryLight },
+                ]}
+                accessibilityLabel="List view"
+                accessibilityRole="button"
+              >
+                <Ionicons
+                  name="list-outline"
+                  size={17}
+                  color={viewMode === 'list' ? theme.colors.primary : theme.colors.textTertiary}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {searchResults.length > 0 ? (
+            <FlatList
+              key={viewMode}
+              data={searchResults}
+              numColumns={viewMode === 'grid' ? 2 : 1}
+              columnWrapperStyle={viewMode === 'grid' ? styles.gridColumnWrapper : undefined}
+              contentContainerStyle={styles.listContentPadding}
+              keyExtractor={(item, index) => String(item.id || item.productId || index)}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <View style={viewMode === 'grid' ? { width: gridCardWidth, marginBottom: 12 } : { marginBottom: 10 }}>
+                  <ProductCard
+                    product={item}
+                    variant={viewMode === 'grid' ? 'grid' : 'list'}
+                    style={viewMode === 'grid' ? { width: '100%', marginBottom: 0 } : undefined}
+                    onPress={() =>
+                      navigation.navigate('ProductDetail', {
+                        productId: String(item.id || item.productId),
+                        product: item,
+                      })
+                    }
+                  />
+                </View>
+              )}
+            />
+          ) : (
+            /* Empty State */
+            <View style={styles.emptyResultsBox}>
+              <View style={[styles.emptyIconCircle, { backgroundColor: theme.colors.surfaceVariant }]}>
+                <Ionicons name="search-outline" size={42} color={theme.colors.textTertiary} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: theme.colors.textPrimary }]}>
+                No Products Found
+              </Text>
+              <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
+                We couldn't find any products matching "{query}". Try checking your spelling or search using more general terms.
+              </Text>
+            </View>
+          )}
         </View>
+      ) : (
+        /* Clean Initial State — Intentionally empty space below search bar */
+        <View style={styles.cleanInitialState} />
       )}
-    </Screen>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  paddingBox: {
-    padding: 16,
+  container: {
     flex: 1,
   },
-  sectionHeader: {
-    marginTop: 20,
-    marginBottom: 10,
+  headerWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
   },
-  sectionTitle: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 15,
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  chipRow: {
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchInputContainer: {
+    flex: 1,
+    height: 44,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  inputInnerWrapper: {
+    flex: 1,
+    height: '100%',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  animatedPlaceholderWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  animatedPlaceholderText: {
+    fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    height: '100%',
+    padding: 0,
+  },
+  innerActionBtn: {
+    paddingHorizontal: 4,
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cleanInitialState: {
+    flex: 1,
+  },
+  resultsMetaBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  resultsCountText: {
+    fontSize: 13,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+  },
+  viewToggleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  toggleBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listContentPadding: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+  gridColumnWrapper: {
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  skeletonContainer: {
+    padding: 16,
+  },
+  resultsHeaderRow: {
+    marginBottom: 16,
+  },
+  skeletonPill: {
+    width: 140,
+    height: 18,
+    borderRadius: 4,
+  },
+  gridRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
-  chipMargin: {
-    marginBottom: 8,
-  },
-  noResultsBox: {
+  emptyResultsBox: {
     padding: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  noResultsTitle: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  voiceModalOverlay: {
-    ...StyleSheet.absoluteFill as object,
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-    zIndex: 100,
+    marginBottom: 16,
   },
-  voiceCard: {
-    width: '100%',
-    padding: 24,
-    borderRadius: 20,
-    alignItems: 'center',
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 6,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
   },
-  voiceTitle: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 20,
-    marginBottom: 4,
-  },
-  voiceSub: {
-    fontFamily: 'Inter_400Regular',
+  emptySubtitle: {
     fontSize: 13,
     textAlign: 'center',
+    lineHeight: 19,
     marginBottom: 24,
-  },
-  closeVoiceBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+    maxWidth: 290,
   },
 });

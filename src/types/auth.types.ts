@@ -1,249 +1,202 @@
 /**
- * HINCH MART — Authentication Types
- *
- * Phone Number + OTP Authentication
+ * HINCH MART — Auth Types
  */
 
-/**
- * OTP purpose.
- *
- * login    → Existing/new user login flow
- * register → Registration flow
- */
-export type OTPPurpose =
-  | 'login'
-  | 'register';
+export type AccountType = 'individual' | 'business' | 'vendor' | 'contractor';
 
-/**
- * Supported HINCH MART account types.
- */
-export type AccountType =
-  | 'individual'
-  | 'business'
-  | 'contractor'
-  | 'vendor';
-
-/**
- * User information returned by the backend.
- */
 export interface User {
   id: string;
-
+  email: string;
   phone: string;
-
   firstName: string;
-
   lastName: string;
-
-  /**
-   * Email is optional.
-   */
-  email?: string | null;
-
-  /**
-   * Account type.
-   */
+  fullName: string;
+  avatar: string | null;
   accountType: AccountType;
-
-  /**
-   * Optional display name.
-   */
-  fullName?: string;
-
-  /**
-   * Optional profile image.
-   */
-  avatar?: string | null;
-
-  /**
-   * Verification status.
-   */
-  isVerified?: boolean;
-
-  /**
-   * Phone verification status.
-   */
-  isPhoneVerified?: boolean;
-
-  /**
-   * Email verification status.
-   */
-  isEmailVerified?: boolean;
-
-  /**
-   * Optional language preference.
-   */
-  language?: string;
-
-  /**
-   * Optional currency preference.
-   */
-  currency?: string;
-
-  /**
-   * Business profile details.
-   */
-  businessProfile?: any | null;
-
-  reviewCount?: number;
-
-  createdAt?: string;
-
-  updatedAt?: string;
+  role?: 'BUYER' | 'VENDOR' | 'ADMIN' | string;
+  companyName?: string;
+  gstIN?: string;
+  pan?: string;
+  gstVerified?: boolean;
+  isVerified: boolean;
+  isPhoneVerified: boolean;
+  isEmailVerified: boolean;
+  businessProfile?: BusinessProfile | null;
+  language: string;
+  currency: string;
+  timezone: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-/**
- * Send OTP request.
- */
-export interface SendOtpRequest {
+export interface BusinessProfile {
+  id: string;
+  companyName: string;
+  companyLogo: string | null;
+  registrationNumber: string;
+  taxId: string;
+  industry: string;
+  website: string;
+  description: string;
+  employeeCount: string;
+  annualRevenue: string;
+  foundedYear: number;
+  certifications: string[];
+  isVerified: boolean;
+}
+
+export interface LoginRequest {
   phone: string;
-
-  purpose: OTPPurpose;
+  otp?: string;
 }
 
-/**
- * Send OTP response.
- */
+export interface SignupRequest {
+  firstName: string;
+  lastName: string;
+  email?: string;
+  phone: string;
+  accountType: AccountType;
+  companyName?: string;
+  gstIN?: string;
+  pan?: string;
+}
+
+export interface SendOtpRequest {
+  identifier: string; // Email address or 10-digit Phone
+  purpose?: 'LOGIN' | 'REGISTRATION';
+}
+
 export interface SendOtpResponse {
   success: boolean;
-
   message: string;
-
-  /**
-   * OTP expiry time in seconds.
-   * Backend example: 300 seconds.
-   */
-  expiresIn?: number;
-
-  /**
-   * Resend cooldown in seconds.
-   * Backend example: 60 seconds.
-   */
-  resendAfter?: number;
+  data: string; // e.g. "OTP: 839201"
 }
 
-/**
- * Verify OTP request.
- */
 export interface VerifyOtpRequest {
+  identifier: string; // Email address or 10-digit Phone
+  otpCode: string; // 6-digit OTP code
+  purpose?: 'LOGIN' | 'REGISTRATION';
+}
+
+export interface VerifyOtpUser {
+  id: number | string;
+  fullName: string;
+  email: string;
   phone: string;
-
-  /**
-   * Six-digit OTP.
-   */
-  otp: string;
-
-  purpose: OTPPurpose;
+  role: 'BUYER' | 'VENDOR' | 'ADMIN';
+  companyName?: string;
 }
 
-/**
- * Existing user response after OTP verification.
- */
-export interface ExistingUserAuthResponse {
-  success: boolean;
-
-  isNewUser: false;
-
+export interface VerifyOtpData {
   accessToken: string;
-
   refreshToken: string;
-
-  user: User;
+  tokenType: string; // "Bearer"
+  user: VerifyOtpUser;
 }
 
-/**
- * New user response after OTP verification.
- */
-export interface NewUserVerificationResponse {
+export interface VerifyOtpResponse {
   success: boolean;
-
-  isNewUser: true;
-
-  /**
-   * Backend-generated token proving
-   * that the phone number was successfully verified.
-   */
-  verificationToken: string;
+  message: string;
+  data: VerifyOtpData;
 }
 
-/**
- * OTP verification response.
- *
- * Existing user → authentication tokens
- *
- * New user → registration verification token
- */
-export type VerifyOtpResponse =
-  | ExistingUserAuthResponse
-  | NewUserVerificationResponse;
-
-/**
- * Registration request.
- */
-export interface RegisterRequest {
-  /**
-   * Token returned after successful OTP
-   * verification for a new user.
-   */
-  verificationToken: string;
-
-  firstName: string;
-
-  lastName: string;
-
-  /**
-   * Optional email.
-   */
-  email?: string | null;
-
-  accountType: AccountType;
-
-  /**
-   * Required for:
-   * business
-   * contractor
-   * vendor
-   *
-   * Not required for:
-   * individual
-   */
-  companyName?: string | null;
+export interface ForgotPasswordRequest {
+  email: string;
 }
 
-/**
- * Registration response.
- */
-export interface RegisterResponse {
-  success: boolean;
-
-  user: User;
-
-  accessToken: string;
-
-  refreshToken: string;
+export interface ResetPasswordRequest {
+  token: string;
+  password: string;
+  confirmPassword: string;
 }
 
-/**
- * Authentication state.
- */
 export interface AuthState {
   user: User | null;
-
+  token: string | null;
   accessToken: string | null;
-
   refreshToken: string | null;
-
   isAuthenticated: boolean;
-
   isLoading: boolean;
+  error: string | null;
+  biometricEnabled?: boolean;
+  hasCompletedOnboarding?: boolean;
+}
 
-  /**
-   * Whether biometric authentication is enabled.
-   */
-  biometricEnabled: boolean;
+export interface SyncUserRequest {
+  firebaseIdToken?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: 'CUSTOMER' | 'SELLER' | 'ADMIN' | 'BUYER' | string;
+}
 
-  /**
-   * Whether onboarding has been completed.
-   */
-  hasCompletedOnboarding: boolean;
+export interface UpdateAuthProfileRequest {
+  name: string;
+  email: string;
+  phone?: string;
+}
+
+export interface CustomerDetails {
+  customerId: number;
+  firebaseUid: string;
+  name: string;
+  email: string | null;
+  phone: string;
+  role: string;
+}
+
+export interface AuthSyncUser {
+  accessToken?: string;
+  tokenType?: string;
+  expiresIn?: number;
+  userId: number;
+  firebaseUid: string;
+  email: string | null;
+  name: string | null;
+  phone: string;
+  role: 'CUSTOMER' | 'SELLER' | 'ADMIN' | 'BUYER' | string;
+  sellerId?: number | null;
+  profileComplete?: boolean;
+  isProfileComplete?: boolean;
+  active?: boolean;
+  customer?: CustomerDetails;
+  claims?: Record<string, any>;
+}
+
+export interface CheckPhoneData {
+  exists: boolean;
+  phone: string;
+  name?: string;
+  role?: string;
+}
+
+export interface CheckPhoneResponse {
+  success: boolean;
+  statusCode: number;
+  message: string;
+  data: CheckPhoneData;
+  timestamp?: string;
+}
+
+export interface AuthMeResponse {
+  success: boolean;
+  statusCode: number;
+  message: string;
+  data: AuthSyncUser;
+  timestamp?: string;
+}
+
+export interface ClaimAdminData {
+  userId: number;
+  role: string;
+  email: string;
+  isProfileComplete?: boolean;
+}
+
+export interface ClaimAdminResponse {
+  success: boolean;
+  statusCode: number;
+  message: string;
+  data: ClaimAdminData;
+  timestamp?: string;
 }

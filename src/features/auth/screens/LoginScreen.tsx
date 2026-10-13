@@ -1,1008 +1,731 @@
 /**
- * HINCHMART — Login Screen
- * Pixel-perfect, ultra-clean responsive layout for all mobile screen sizes.
+ * HINCH MART — Pixel-Perfect Mobile OTP Login Screen
+ * Features:
+ * - Phone number only (Email & Password removed)
+ * - Left-side country code dropdown picker (+91 ▾)
+ * - Green checkmark indicator when a valid mobile number is entered
+ * - Database existence check on submit:
+ *     - If user exists in DB -> proceeds to send OTP and navigate to OTP screen
+ *     - If new user (not in DB) -> automatically redirects to Create Account / Register screen
+ * - Live Firebase Phone SMS OTP via native reCAPTCHA bridge
+ * - "Don't have an account? Register Now" link
  */
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
+  TextInput,
   TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
   KeyboardAvoidingView,
   Platform,
-  TextInput,
   StatusBar,
-  ActivityIndicator,
-  useWindowDimensions,
-  ScrollView,
+  Modal,
+  Keyboard,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { authApi } from '../../../services/api/auth.api';
+import { sendFirebasePhoneOtp } from '../../../services/api/firebaseAuth';
+import { FirebaseRecaptchaModal } from '../../../components/auth/FirebaseRecaptchaModal';
 import { authStore } from '../../../store/authStore';
-import { AUTH_CONFIG } from '../../../config/authConfig';
 
-const NAVY = '#0A2540';
-const ORANGE = '#F47B20';
-const BORDER = '#E5E7EB';
-const MUTED = '#9CA3AF';
-const ERR = '#EF4444';
-const OTP_LENGTH = 6;
-const RESEND_SECONDS = AUTH_CONFIG.resendSeconds || 45;
+export interface CountryCodeItem {
+  code: string;
+  dial: string;
+  name: string;
+  flag: string;
+  digits: number;
+}
 
-export function LoginScreen({ navigation }: any) {
+export const COUNTRY_CODES: CountryCodeItem[] = [
+  { code: 'IN', dial: '+91', name: 'India', flag: '🇮🇳', digits: 10 },
+  { code: 'AE', dial: '+971', name: 'United Arab Emirates', flag: '🇦🇪', digits: 9 },
+  { code: 'SA', dial: '+966', name: 'Saudi Arabia', flag: '🇸🇦', digits: 9 },
+  { code: 'US', dial: '+1', name: 'United States', flag: '🇺🇸', digits: 10 },
+  { code: 'GB', dial: '+44', name: 'United Kingdom', flag: '🇬🇧', digits: 10 },
+  { code: 'SG', dial: '+65', name: 'Singapore', flag: '🇸🇬', digits: 8 },
+  { code: 'QA', dial: '+974', name: 'Qatar', flag: '🇶🇦', digits: 8 },
+  { code: 'OM', dial: '+968', name: 'Oman', flag: '🇴🇲', digits: 8 },
+  { code: 'KW', dial: '+965', name: 'Kuwait', flag: '🇰🇼', digits: 8 },
+  { code: 'BH', dial: '+973', name: 'Bahrain', flag: '🇧🇭', digits: 8 },
+  { code: 'CA', dial: '+1', name: 'Canada', flag: '🇨🇦', digits: 10 },
+  { code: 'AU', dial: '+61', name: 'Australia', flag: '🇦🇺', digits: 9 },
+  { code: 'DE', dial: '+49', name: 'Germany', flag: '🇩🇪', digits: 10 },
+  { code: 'MY', dial: '+60', name: 'Malaysia', flag: '🇲🇾', digits: 10 },
+];
+
+export function LoginScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { width: W, height: H } = useWindowDimensions();
+  const scrollViewRef = useRef<ScrollView>(null);
 
-  // State
-  const [phone, setPhone] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const phoneRef = useRef<TextInput>(null);
+  const [selectedCountry, setSelectedCountry] = useState<CountryCodeItem>(COUNTRY_CODES[0]);
+  const [identifier, setIdentifier] = useState(route?.params?.phone || '');
+  const [identifierError, setIdentifierError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Checking account...');
+  const [countryModalVisible, setCountryModalVisible] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+  const [recaptchaVisible, setRecaptchaVisible] = useState(false);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
 
-  // OTP State
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpDigits, setOtpDigits] = useState<string[]>(Array(OTP_LENGTH).fill(''));
-  const [otpFocusedIndex, setOtpFocusedIndex] = useState(0);
-  const [countdown, setCountdown] = useState(RESEND_SECONDS);
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [otpError, setOtpError] = useState('');
-
-  const otpInputRefs = useRef<Array<TextInput | null>>(
-    Array.from({ length: OTP_LENGTH }, () => null)
-  );
-
-  // Countdown timer
   useEffect(() => {
-    if (!otpSent || countdown <= 0) return;
-    const t = setTimeout(() => setCountdown((p) => p - 1), 1000);
-    return () => clearTimeout(t);
-  }, [otpSent, countdown]);
-
-  const onPhoneChange = (t: string) => {
-    setPhone(t.replace(/\D/g, '').slice(0, 10));
-    if (error) setError('');
-    if (otpSent) {
-      setOtpSent(false);
-      setOtpDigits(Array(OTP_LENGTH).fill(''));
-      setOtpError('');
-    }
-  };
-
-  const fillOtp = useCallback((code: string) => {
-    const arr = code.split('').slice(0, OTP_LENGTH);
-    while (arr.length < OTP_LENGTH) arr.push('');
-    setOtpDigits(arr);
-    setOtpFocusedIndex(OTP_LENGTH - 1);
-    setOtpError('');
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setIsKeyboardOpen(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setIsKeyboardOpen(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
   }, []);
 
-  const onContinue = async () => {
-    if (!phone) {
-      setError('Please enter your mobile number.');
-      phoneRef.current?.focus();
-      return;
-    }
-    if (phone.length !== 10) {
-      setError('Please enter a valid 10-digit mobile number.');
-      phoneRef.current?.focus();
-      return;
-    }
-    if (!/^[6-9]/.test(phone)) {
-      setError('Mobile number must start with 6, 7, 8 or 9.');
-      phoneRef.current?.focus();
-      return;
+  const filteredCountries = COUNTRY_CODES.filter(
+    (c) =>
+      c.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
+      c.dial.includes(countrySearch) ||
+      c.code.toLowerCase().includes(countrySearch.toLowerCase())
+  );
+
+  const validatePhone = (): boolean => {
+    const cleanPhone = identifier.replace(/[^0-9]/g, '');
+
+    if (!cleanPhone) {
+      setIdentifierError('Mobile number is required');
+      return false;
     }
 
-    try {
-      setLoading(true);
-      setError('');
-      setOtpError('');
-      await new Promise((r) => setTimeout(r, 350));
-      setOtpSent(true);
-      setCountdown(RESEND_SECONDS);
-
-      const code = AUTH_CONFIG.developmentOtp || '123456';
-      fillOtp(code);
-    } finally {
-      setLoading(false);
+    if (selectedCountry.dial === '+91') {
+      if (cleanPhone.length !== 10) {
+        setIdentifierError('Mobile number must be exactly 10 digits');
+        return false;
+      }
+      if (!/^[6-9]/.test(cleanPhone)) {
+        setIdentifierError('Mobile number must start with 6, 7, 8, or 9');
+        return false;
+      }
+    } else {
+      const requiredDigits = selectedCountry.digits || 10;
+      if (cleanPhone.length !== requiredDigits) {
+        setIdentifierError(`Enter a valid ${requiredDigits}-digit mobile number`);
+        return false;
+      }
     }
+
+    setIdentifierError('');
+    return true;
   };
 
-  const onResend = async () => {
-    if (countdown > 0 || loading || isVerifying) return;
-    try {
-      setLoading(true);
-      setOtpDigits(Array(OTP_LENGTH).fill(''));
-      setOtpError('');
-      await new Promise((r) => setTimeout(r, 300));
-      setCountdown(RESEND_SECONDS);
-      const code = AUTH_CONFIG.developmentOtp || '123456';
-      fillOtp(code);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const handleContinueWithOtp = async () => {
+    if (!validatePhone()) return;
 
-  const onChangeNumber = () => {
-    setOtpSent(false);
-    setOtpDigits(Array(OTP_LENGTH).fill(''));
-    setOtpError('');
-    setTimeout(() => {
-      phoneRef.current?.focus();
-    }, 100);
-  };
+    setIdentifierError('');
+    setIsLoading(true);
+    setLoadingMessage('Checking account...');
 
-  const onVerify = async () => {
-    const otpCode = otpDigits.join('');
-    if (otpCode.length < OTP_LENGTH || isVerifying) return;
-
-    setIsVerifying(true);
-    setOtpError('');
+    const cleanPhone = identifier.replace(/[^0-9]/g, '');
+    const fullPhone = `${selectedCountry.dial}${cleanPhone}`;
 
     try {
-      await new Promise((r) => setTimeout(r, 400));
+      // 1. Check DB if user exists via GET /api/auth/check-phone?phone={phoneNumber}
+      let userExists = false;
+      let existingUserName: string | undefined;
 
-      if (otpCode !== AUTH_CONFIG.developmentOtp && otpCode !== '123456') {
-        throw new Error('Invalid OTP. Please enter the correct OTP.');
+      try {
+        const checkRes = await authApi.checkPhone(fullPhone);
+        if (checkRes && checkRes.data && typeof checkRes.data.exists === 'boolean') {
+          userExists = checkRes.data.exists;
+          existingUserName = checkRes.data.name;
+        } else {
+          userExists = await authApi.checkUserExists(fullPhone);
+        }
+      } catch {
+        userExists = await authApi.checkUserExists(fullPhone);
       }
 
-      const clean = (p: string) => p.replace(/\D/g, '').slice(-10);
-      const last10 = clean(phone);
+      const returnScreen = route?.params?.returnScreen;
+      const returnParams = route?.params?.returnParams;
+      const action = route?.params?.action;
 
-      const existingProfile =
-        AUTH_CONFIG.mockExistingUserProfiles[last10] ||
-        AUTH_CONFIG.mockExistingUserProfiles['9876543210'];
+      if (!userExists) {
+        // User not in DB -> Navigate to Register / Create Account page for new users
+        setIsLoading(false);
+        navigation.navigate('RegistrationDetails', {
+          phone: cleanPhone,
+          fullPhone,
+          countryDial: selectedCountry.dial,
+          countryFlag: selectedCountry.flag,
+          isNewUser: true,
+          returnScreen,
+          returnParams,
+          action,
+        });
+        return;
+      }
 
-      const userProfile = existingProfile || {
-        id: `usr_${last10 || Date.now()}`,
-        phone: `+91${last10}`,
-        firstName: 'User',
-        lastName: last10.slice(-4) || 'Member',
-        fullName: `User ${last10.slice(-4) || ''}`.trim(),
-        email: null,
-        accountType: 'individual' as const,
-        businessProfile: null,
-        isVerified: true,
-        isPhoneVerified: true,
-        isEmailVerified: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      // 2. User exists in DB -> Send OTP and proceed to OTPScreen
+      const resolvedName =
+        existingUserName ||
+        authStore.getRegisteredUserName(fullPhone) ||
+        authStore.getRegisteredUserName(cleanPhone);
 
-      await authStore.saveSession({
-        user: userProfile,
-        accessToken: `mock_access_${Date.now()}`,
-        refreshToken: `mock_refresh_${Date.now()}`,
-      });
-
-      navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+      setLoadingMessage('Sending verification code...');
+      if (Platform.OS === 'web') {
+        await sendFirebasePhoneOtp(fullPhone);
+        setIsLoading(false);
+        navigation.navigate('OTP', {
+          phone: cleanPhone,
+          fullPhone,
+          countryDial: selectedCountry.dial,
+          countryFlag: selectedCountry.flag,
+          isNewUser: false,
+          purpose: 'LOGIN',
+          returnScreen,
+          returnParams,
+          action,
+          registrationPayload: undefined,
+        });
+      } else {
+        // On Native Mobile (Android/iOS): Send real SMS OTP in background invisibly (no reCAPTCHA modal)
+        setIsLoading(true);
+        setRecaptchaVisible(true);
+      }
     } catch (err: any) {
-      setOtpError(err?.message || 'Invalid OTP. Please enter the correct OTP.');
-      setOtpDigits(Array(OTP_LENGTH).fill(''));
-      setOtpFocusedIndex(0);
-      setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
-    } finally {
-      setIsVerifying(false);
+      setIsLoading(false);
+      setIdentifierError(
+        err?.message || 'Failed to verify account. Please check your network and try again.'
+      );
     }
   };
 
-  const handleOtpChange = (text: string, index: number) => {
-    setOtpError('');
+  const handleRecaptchaSuccess = (verificationId: string) => {
+    setIsLoading(false);
+    setRecaptchaVisible(false);
+    const cleanPhone = identifier.replace(/[^0-9]/g, '');
+    const fullPhone = `${selectedCountry.dial}${cleanPhone}`;
+    const returnScreen = route?.params?.returnScreen;
+    const returnParams = route?.params?.returnParams;
+    const action = route?.params?.action;
 
-    if (text.length > 1) {
-      const pasted = text.replace(/\D/g, '').slice(0, OTP_LENGTH);
-      const next = Array(OTP_LENGTH).fill('');
-      pasted.split('').forEach((d, i) => {
-        next[i] = d;
-      });
-      setOtpDigits(next);
-      const target = Math.min(pasted.length, OTP_LENGTH - 1);
-      setOtpFocusedIndex(target);
-      otpInputRefs.current[target]?.focus();
-      return;
-    }
-
-    const digit = text.replace(/\D/g, '').slice(0, 1);
-    const next = [...otpDigits];
-    next[index] = digit;
-    setOtpDigits(next);
-
-    if (digit && index < OTP_LENGTH - 1) {
-      setOtpFocusedIndex(index + 1);
-      otpInputRefs.current[index + 1]?.focus();
-    }
+    navigation.navigate('OTP', {
+      phone: cleanPhone,
+      fullPhone,
+      verificationId,
+      countryDial: selectedCountry.dial,
+      countryFlag: selectedCountry.flag,
+      isNewUser: false,
+      purpose: 'LOGIN',
+      returnScreen,
+      returnParams,
+      action,
+      registrationPayload: undefined,
+    });
   };
 
-  const handleOtpKeyPress = (e: any, index: number) => {
-    if (e.nativeEvent.key === 'Backspace') {
-      setOtpError('');
-      const next = [...otpDigits];
-      if (next[index]) {
-        next[index] = '';
-        setOtpDigits(next);
-      } else if (index > 0) {
-        next[index - 1] = '';
-        setOtpDigits(next);
-        setOtpFocusedIndex(index - 1);
-        otpInputRefs.current[index - 1]?.focus();
-      }
-    }
+  const handleRecaptchaError = (err: string) => {
+    setIsLoading(false);
+    setRecaptchaVisible(false);
+    setIdentifierError(err || 'Failed to send verification code. Please try again.');
   };
-
-  const onRegister = () =>
-    navigation.navigate('Register', { phone: phone ? `+91${phone}` : '', directRegister: true });
-
-  const isOtpComplete = otpDigits.join('').length === OTP_LENGTH;
-  const formWidth = Math.min(W - 48, 380);
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-
-      {/* Decorative dot pattern top-right */}
-      <View style={[s.dotGrid, { top: insets.top + 8 }]} pointerEvents="none">
-        {Array.from({ length: 6 }).map((_, r) => (
-          <View key={r} style={s.dotRow}>
-            {Array.from({ length: 5 }).map((_, c) => (
-              <View
-                key={c}
-                style={[s.dot, { opacity: Math.max(0.1, 0.4 - c * 0.06 - r * 0.05) }]}
-              />
-            ))}
-          </View>
-        ))}
-      </View>
+    <View style={styles.screenContainer}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F6F8FC" translucent={false} />
 
       <KeyboardAvoidingView
-        style={s.kav}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.keyboardAvoid}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         <ScrollView
+          ref={scrollViewRef}
           contentContainerStyle={[
-            s.scrollContent,
+            styles.scrollContent,
             {
-              paddingTop: insets.top + (H < 720 ? 12 : 24),
-              paddingBottom: Math.max(insets.bottom, 12),
+              paddingTop: Math.max(insets.top, 16) + 16,
+              paddingBottom: Math.max(insets.bottom, 24) + (isKeyboardOpen ? 120 : 24),
             },
           ]}
-          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          bounces={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          bounces={true}
+          overScrollMode="always"
         >
-          {/* Main Form Content */}
-          <View style={s.mainSection}>
-            {/* Logo */}
-            <View style={s.logoWrap}>
-              <Image
-                source={require('../../../../assets/logo.png')}
-                style={s.logo}
-                contentFit="contain"
-              />
-              <View style={s.tagRow}>
-                <View style={s.tagLine} />
-                <Text style={s.tagText}>BUILDING YOUR BUSINESS</Text>
-                <View style={s.tagLine} />
-              </View>
-            </View>
-
-            {/* Welcome Heading */}
-            <View style={s.welcomeWrap}>
-              <Text style={s.h1}>Welcome Back 👋</Text>
-              <Text style={s.h2}>Login to your HinchMart account</Text>
-            </View>
-
-            {/* Form */}
-            <View style={[s.form, { width: formWidth }]}>
-              {/* Phone Label */}
-              <View style={s.labelRow}>
-                <Text style={s.label}>Mobile Number</Text>
-                {otpSent && (
-                  <TouchableOpacity
-                    onPress={onChangeNumber}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Text style={s.changeText}>Change</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* Mobile Input Box */}
-              <TouchableOpacity
-                activeOpacity={1}
-                onPress={() => !otpSent && phoneRef.current?.focus()}
-                style={[
-                  s.inputBox,
-                  error ? s.inputErr : focused ? s.inputFocus : s.inputDefault,
-                  otpSent && s.inputDisabled,
-                ]}
-              >
-                <View style={s.prefix}>
-                  <Text style={s.prefixTxt}>+91</Text>
-                </View>
-                <View style={s.divider} />
-                <TextInput
-                  ref={phoneRef}
-                  value={phone}
-                  onChangeText={onPhoneChange}
-                  placeholder="Enter your mobile number"
-                  placeholderTextColor={MUTED}
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                  editable={!otpSent}
-                  onFocus={() => setFocused(true)}
-                  onBlur={() => setFocused(false)}
-                  style={[s.textInput, otpSent && { color: '#4B5563' }]}
-                  accessibilityLabel="Mobile Number"
-                />
-                {!otpSent && phone.length > 0 && (
-                  <TouchableOpacity
-                    onPress={() => {
-                      setPhone('');
-                      setError('');
-                    }}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    style={s.clear}
-                  >
-                    <Ionicons name="close-circle" size={18} color={MUTED} />
-                  </TouchableOpacity>
-                )}
-                {otpSent && (
-                  <TouchableOpacity onPress={onChangeNumber} style={s.clear}>
-                    <Ionicons name="pencil" size={16} color={ORANGE} />
-                  </TouchableOpacity>
-                )}
-              </TouchableOpacity>
-
-              {!!error && !otpSent && (
-                <View style={s.errRow}>
-                  <Ionicons name="alert-circle" size={14} color={ERR} />
-                  <Text style={s.errTxt}>{error}</Text>
-                </View>
-              )}
-
-              {/* ─── INLINE OTP ─── */}
-              {otpSent ? (
-                <View style={s.otpSection}>
-                  <Text style={s.otpLabel}>Enter 6-Digit OTP</Text>
-
-                  {/* 6 OTP Boxes */}
-                  <View style={s.otpRow}>
-                    {otpDigits.map((digit, idx) => {
-                      const isFoc = otpFocusedIndex === idx;
-                      return (
-                        <TextInput
-                          key={idx}
-                          ref={(r) => {
-                            otpInputRefs.current[idx] = r;
-                          }}
-                          value={digit}
-                          onChangeText={(t) => handleOtpChange(t, idx)}
-                          onKeyPress={(e) => handleOtpKeyPress(e, idx)}
-                          onFocus={() => setOtpFocusedIndex(idx)}
-                          keyboardType="number-pad"
-                          maxLength={1}
-                          selectTextOnFocus
-                          caretHidden
-                          style={[
-                            s.otpBox,
-                            isFoc ? s.otpFocus : digit ? s.otpFilled : s.otpDefault,
-                            otpError ? s.otpErr : null,
-                          ]}
-                        />
-                      );
-                    })}
-                  </View>
-
-                  {/* OTP Error */}
-                  {!!otpError && (
-                    <View style={s.errRow}>
-                      <Ionicons name="alert-circle" size={14} color={ERR} />
-                      <Text style={s.errTxt}>{otpError}</Text>
-                    </View>
-                  )}
-
-                  {/* Resend Link */}
-                  <View style={s.resendRow}>
-                    {countdown > 0 ? (
-                      <Text style={s.resendTxt}>
-                        Resend OTP in <Text style={s.resendNum}>{countdown}s</Text>
-                      </Text>
-                    ) : (
-                      <TouchableOpacity onPress={onResend} disabled={loading || isVerifying}>
-                        <Text style={s.resendBtn}>Resend OTP</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  {/* Verify & Login Button */}
-                  <TouchableOpacity
-                    onPress={onVerify}
-                    disabled={isVerifying || !isOtpComplete}
-                    activeOpacity={0.88}
-                    style={[s.btn, (isVerifying || !isOtpComplete) && { opacity: 0.8 }]}
-                    accessibilityRole="button"
-                  >
-                    {isVerifying ? (
-                      <View style={s.btnInner}>
-                        <ActivityIndicator size="small" color="#fff" />
-                        <Text style={s.btnTxt}>Verifying...</Text>
-                      </View>
-                    ) : (
-                      <View style={s.btnInner}>
-                        <Text style={s.btnTxt}>Verify & Login</Text>
-                        <Ionicons name="arrow-forward" size={18} color={ORANGE} style={s.btnArrow} />
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                /* Continue with OTP Button */
-                <TouchableOpacity
-                  onPress={onContinue}
-                  disabled={loading}
-                  activeOpacity={0.88}
-                  style={[s.btn, loading && { opacity: 0.8 }]}
-                  accessibilityRole="button"
-                >
-                  {loading ? (
-                    <View style={s.btnInner}>
-                      <ActivityIndicator size="small" color="#fff" />
-                      <Text style={s.btnTxt}>Sending OTP...</Text>
-                    </View>
-                  ) : (
-                    <View style={s.btnInner}>
-                      <Text style={s.btnTxt}>Continue with OTP</Text>
-                      <Ionicons name="arrow-forward" size={18} color={ORANGE} style={s.btnArrow} />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              )}
-
-              {/* OR Divider */}
-              <View style={s.orRow}>
-                <View style={s.orLine} />
-                <Text style={s.orTxt}>OR</Text>
-                <View style={s.orLine} />
-              </View>
-
-              {/* Create Account Link */}
-              <View style={s.caWrap}>
-                <Text style={s.caHint}>Don't have an account?</Text>
-                <TouchableOpacity onPress={onRegister} activeOpacity={0.75} style={s.caBtn}>
-                  <Text style={s.caLink}>Create Account</Text>
-                  <Ionicons name="arrow-forward" size={14} color={ORANGE} />
-                </TouchableOpacity>
-              </View>
-            </View>
+          {/* Top Logo & Welcome Header */}
+          <View style={styles.headerSection}>
+            <Image
+              source={require('../../../../assets/logo.png')}
+              style={styles.brandLogo}
+              contentFit="contain"
+            />
+            <Text style={styles.welcomeTitle}>Welcome Back!</Text>
+            <Text style={styles.welcomeSubtitle}>Good to see you again. Let’s get you signed in.</Text>
           </View>
 
-          {/* ─── ILLUSTRATION (Clean, grounded, proportional) ─── */}
-          <View style={s.illusContainer} pointerEvents="none">
-            <LinearGradient
-              colors={['rgba(255,255,255,0)', '#EEF2F7', '#E2E8F0']}
-              style={StyleSheet.absoluteFillObject}
-            />
-
-            {/* Skyline Buildings */}
-            <View style={s.skyline}>
-              {[
-                { h: 90, w: 36, pos: { left: 16 } },
-                { h: 120, w: 46, pos: { left: 54 } },
-                { h: 72, w: 30, pos: { left: 104 } },
-                { h: 105, w: 42, pos: { right: 120 } },
-                { h: 125, w: 52, pos: { right: 64 } },
-                { h: 80, w: 36, pos: { right: 20 } },
-              ].map((t, i) => (
-                <View key={i} style={[s.tower, { height: t.h, width: t.w, ...t.pos }]} />
-              ))}
+          {/* Centered White Card */}
+          <View style={styles.card}>
+            {/* Card Title */}
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>Login to your account</Text>
+              <View style={styles.cardTitleUnderline} />
             </View>
 
-            {/* Warehouse */}
-            <View style={[s.warehouse, { right: Math.max(16, W * 0.05) }]}>
-              <View style={s.whRoof} />
-              <View style={s.whSign}>
-                <Text style={s.whSignTxt}>HINCHMART</Text>
+            {/* Mobile Number Field */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Mobile Number</Text>
+
+              <View
+                style={[
+                  styles.inputContainer,
+                  Boolean(identifierError) && styles.inputContainerError,
+                ]}
+              >
+                {/* Left Side Country Code Picker Dropdown (+91 ▾) */}
+                <TouchableOpacity
+                  onPress={() => setCountryModalVisible(true)}
+                  style={styles.countryPickerBtn}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.countryFlagText}>{selectedCountry.flag}</Text>
+                  <Text style={styles.countryDialText}>{selectedCountry.dial}</Text>
+                  <Ionicons name="chevron-down" size={13} color="#0038A8" style={{ marginLeft: 3 }} />
+                </TouchableOpacity>
+
+                <View style={styles.inputDivider} />
+
+                {/* Input Box */}
+                <TextInput
+                  style={styles.textInput}
+                  placeholder={`Enter ${selectedCountry.digits || 10}-digit mobile number`}
+                  placeholderTextColor="#94A3B8"
+                  value={identifier}
+                  onChangeText={(text) => {
+                    const cleanDigits = text.replace(/[^0-9]/g, '').slice(0, selectedCountry.digits || 10);
+                    setIdentifier(cleanDigits);
+                    if (identifierError) setIdentifierError('');
+                  }}
+                  autoCapitalize="none"
+                  keyboardType="number-pad"
+                  maxLength={selectedCountry.digits || 10}
+                  multiline={false}
+                  numberOfLines={1}
+                />
+
+                {/* Right Side Green Tick — shown once full valid mobile number is entered */}
+                {identifier.length === (selectedCountry.digits || 10) && (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={20}
+                    color="#16A34A"
+                    style={styles.validTickIcon}
+                  />
+                )}
               </View>
-              <View style={s.bayRow}>
-                {[false, true, false].map((open, i) => (
-                  <View key={i} style={[s.bay, open && s.bayOpen]}>
-                    {open ? (
-                      <>
-                        <View style={[s.cargo, { bottom: 0, left: 3, width: 14, height: 14 }]} />
-                        <View
-                          style={[
-                            s.cargo,
-                            { bottom: 0, right: 3, width: 12, height: 12, opacity: 0.7 },
-                          ]}
-                        />
-                        <View style={[s.cargo, { bottom: 14, left: 6, width: 10, height: 9 }]} />
-                      </>
-                    ) : (
-                      [0, 1, 2].map((j) => <View key={j} style={s.shutter} />)
-                    )}
-                  </View>
-                ))}
-              </View>
+
+              {Boolean(identifierError) && (
+                <View style={styles.errorRow}>
+                  <Ionicons name="alert-circle-outline" size={14} color="#EF4444" />
+                  <Text style={styles.errorText}>{identifierError}</Text>
+                </View>
+              )}
             </View>
 
-            {/* Forklift */}
-            <View style={[s.fl, { left: Math.max(76, W * 0.3) }]}>
-              <View style={s.flBody} />
-              <View style={s.flCab} />
-              <View style={s.flHead} />
-              <View style={s.flMast} />
-              <View style={[s.flWhl, { left: 2 }]} />
-              <View style={[s.flWhl, { right: 12, width: 10, height: 10, borderRadius: 5 }]} />
-              <View style={s.palBase} />
-              <View style={s.pal1} />
-              <View style={s.pal2} />
-            </View>
+            {/* LOGIN WITH OTP Action Button */}
+            <TouchableOpacity
+              onPress={handleContinueWithOtp}
+              style={styles.loginBtn}
+              activeOpacity={0.85}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <Text style={styles.loadingBtnText}>{loadingMessage}</Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.loginBtnText}>LOGIN WITH OTP</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
 
-            {/* Van */}
-            <View style={s.van}>
-              <View style={s.vanBody} />
-              <View style={s.vanCab} />
-              <View style={s.vanWin} />
-              <View style={s.vanLight} />
-              <View style={[s.vanWhl, { left: 9 }]} />
-              <View style={[s.vanWhl, { right: 7 }]} />
-            </View>
-
-            {/* Ground line */}
-            <View style={s.ground} />
-
-            {/* Bottom Wave curves */}
-            <View style={s.curves}>
-              <View style={[s.orangeWave, { width: W + 80, left: -40 }]} />
-              <View style={[s.navyWave, { width: W + 80, left: -40 }]} />
-            </View>
+          {/* Don't have an account? Register Now */}
+          <View style={styles.footerLinkRow}>
+            <Text style={styles.footerText}>Don't have an account?</Text>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('RegistrationDetails', {
+                phone: identifier.replace(/[^0-9]/g, ''),
+                countryDial: selectedCountry.dial,
+                returnScreen: route?.params?.returnScreen,
+              })}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.registerLink}>Register Now</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Country Selection Modal */}
+      <Modal
+        visible={countryModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCountryModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setCountryModalVisible(false)}
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Country Code</Text>
+              <TouchableOpacity
+                onPress={() => setCountryModalVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Country Input */}
+            <View style={styles.modalSearchBox}>
+              <Ionicons name="search-outline" size={16} color="#94A3B8" />
+              <TextInput
+                style={styles.modalSearchInput}
+                placeholder="Search country or code..."
+                placeholderTextColor="#94A3B8"
+                value={countrySearch}
+                onChangeText={setCountrySearch}
+              />
+            </View>
+
+            <ScrollView style={{ maxHeight: 330 }} showsVerticalScrollIndicator={false}>
+              {filteredCountries.map((item) => {
+                const isSelected = selectedCountry.dial === item.dial && selectedCountry.code === item.code;
+                return (
+                  <TouchableOpacity
+                    key={`${item.code}-${item.dial}`}
+                    onPress={() => {
+                      setSelectedCountry(item);
+                      setCountryModalVisible(false);
+                      setCountrySearch('');
+                    }}
+                    style={[
+                      styles.countryOptionRow,
+                      isSelected && styles.countryOptionRowSelected,
+                    ]}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.countryOptionLeft}>
+                      <Text style={styles.countryOptionFlag}>{item.flag}</Text>
+                      <Text style={styles.countryOptionName}>{item.name}</Text>
+                    </View>
+                    <View style={styles.countryOptionRight}>
+                      <Text style={styles.countryOptionDial}>{item.dial}</Text>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={18} color="#0038A8" style={{ marginLeft: 6 }} />
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {recaptchaVisible && (
+        <FirebaseRecaptchaModal
+          visible={recaptchaVisible}
+          phoneNumber={`${selectedCountry.dial}${identifier.replace(/[^0-9]/g, '')}`}
+          onSuccess={handleRecaptchaSuccess}
+          onError={handleRecaptchaError}
+          onClose={() => {
+            setIsLoading(false);
+            setRecaptchaVisible(false);
+          }}
+        />
+      )}
     </View>
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#ffffff' },
-  kav: { flex: 1 },
+const styles = StyleSheet.create({
+  screenContainer: {
+    flex: 1,
+    backgroundColor: '#F6F8FC',
+  },
+  keyboardAvoid: {
+    flex: 1,
+  },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'space-between',
-  },
-
-  /* ── Dot grid ── */
-  dotGrid: { position: 'absolute', right: 16, zIndex: 2 },
-  dotRow: { flexDirection: 'row', gap: 5, marginBottom: 5 },
-  dot: { width: 3.5, height: 3.5, borderRadius: 2, backgroundColor: '#94A3B8' },
-
-  /* ── Main content section ── */
-  mainSection: {
-    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 20,
   },
-
-  /* Logo */
-  logoWrap: { alignItems: 'center', marginBottom: 12 },
-  logo: { width: 210, height: 112, marginBottom: 4 },
-  tagRow: { flexDirection: 'row', alignItems: 'center' },
-  tagLine: { width: 32, height: 1, backgroundColor: '#CBD5E1' },
-  tagText: {
-    fontWeight: '600',
-    fontSize: 9.5,
-    letterSpacing: 2,
-    color: '#64748B',
-    marginHorizontal: 8,
-    textTransform: 'uppercase',
-  },
-
-  /* Welcome */
-  welcomeWrap: { alignItems: 'center', marginBottom: 16 },
-  h1: {
-    fontWeight: '700',
-    fontSize: 26,
-    color: NAVY,
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  h2: {
-    fontWeight: '400',
-    fontSize: 14.5,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-
-  /* Form */
-  form: { alignSelf: 'center' },
-  labelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  headerSection: {
     alignItems: 'center',
-    marginBottom: 7,
+    marginBottom: 16,
   },
-  label: { fontWeight: '600', fontSize: 14, color: '#111827' },
-  changeText: {
-    fontWeight: '600',
+  brandLogo: {
+    width: 140,
+    height: 85,
+    marginBottom: 6,
+  },
+  welcomeTitle: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 22,
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  welcomeSubtitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    color: '#475569',
+    textAlign: 'center',
+    maxWidth: 320,
+    marginTop: 4,
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 24,
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+    ...(Platform.OS === 'ios'
+      ? {
+          shadowColor: '#0F172A',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.1,
+          shadowRadius: 20,
+        }
+      : { elevation: 6 }),
+  },
+  cardHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  cardTitle: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 16,
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  cardTitleUnderline: {
+    width: 36,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#0038A8',
+  },
+  fieldGroup: {
+    marginBottom: 20,
+  },
+  fieldLabel: {
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 13.5,
-    color: ORANGE,
+    color: '#0F172A',
+    marginBottom: 8,
   },
-
-  inputBox: {
+  inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 52,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     borderRadius: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#FFFFFF',
+    height: 50,
     overflow: 'hidden',
   },
-  inputDefault: { borderWidth: 1, borderColor: BORDER },
-  inputFocus: { borderWidth: 1.5, borderColor: NAVY },
-  inputErr: { borderWidth: 1.5, borderColor: ERR, backgroundColor: '#FEF2F2' },
-  inputDisabled: { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' },
-
-  prefix: {
-    width: 60,
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+  inputContainerError: {
+    borderColor: '#EF4444',
   },
-  prefixTxt: { fontWeight: '600', fontSize: 15, color: '#111827' },
-  divider: { width: 1, height: 26, backgroundColor: BORDER },
+  countryPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: '100%',
+    paddingHorizontal: 12,
+    backgroundColor: '#EEF4FF',
+  },
+  countryFlagText: {
+    fontSize: 18,
+    marginRight: 4,
+  },
+  countryDialText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13.5,
+    color: '#0038A8',
+  },
+  inputDivider: {
+    width: 1,
+    height: '100%',
+    backgroundColor: '#E2E8F0',
+  },
   textInput: {
     flex: 1,
     height: '100%',
     paddingHorizontal: 14,
-    fontWeight: '500',
-    fontSize: 15,
-    color: '#111827',
+    paddingVertical: 0,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 14,
+    color: '#0F172A',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
-  clear: { padding: 8, marginRight: 4 },
-
-  errRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
-  errTxt: { fontWeight: '400', fontSize: 12, color: ERR, flex: 1 },
-
-  /* ─── Inline OTP ─── */
-  otpSection: {
-    marginTop: 12,
-  },
-  otpLabel: {
-    fontWeight: '600',
-    fontSize: 13.5,
-    color: '#111827',
-    marginBottom: 8,
-  },
-  otpRow: {
+  errorRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-    marginBottom: 6,
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
   },
-  otpBox: {
-    flex: 1,
-    height: 50,
-    borderRadius: 10,
-    textAlign: 'center',
-    fontWeight: '700',
-    fontSize: 20,
-    backgroundColor: '#ffffff',
-    color: NAVY,
+  errorText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 12,
+    color: '#EF4444',
   },
-  otpDefault: { borderWidth: 1, borderColor: BORDER },
-  otpFilled: { borderWidth: 1.5, borderColor: NAVY, backgroundColor: '#F8FAFC' },
-  otpFocus: { borderWidth: 2, borderColor: NAVY, backgroundColor: '#ffffff' },
-  otpErr: { borderWidth: 1.5, borderColor: ERR, backgroundColor: '#FEF2F2' },
-
-  resendRow: {
+  validTickIcon: {
+    marginRight: 12,
+  },
+  loginBtn: {
+    backgroundColor: '#E31E24',
+    borderRadius: 8,
+    height: 48,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 8,
+    gap: 8,
   },
-  resendTxt: {
-    fontWeight: '400',
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingBtnText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '600',
+    fontSize: 13,
+    color: '#FFFFFF',
+  },
+  loginBtnText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    fontSize: 14,
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  footerLinkRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
+    gap: 5,
+  },
+  footerText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
     fontSize: 13,
     color: '#64748B',
   },
-  resendNum: {
-    fontWeight: '600',
-    color: ORANGE,
-  },
-  resendBtn: {
-    fontWeight: '600',
-    fontSize: 13.5,
-    color: ORANGE,
-  },
-
-  /* Buttons */
-  btn: {
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: NAVY,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 10,
-    ...Platform.select({
-      ios: {
-        shadowColor: NAVY,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-      },
-      android: { elevation: 3 },
-    }),
-  },
-  btnInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    paddingHorizontal: 18,
-    gap: 8,
-  },
-  btnTxt: {
-    fontWeight: '600',
-    fontSize: 15.5,
-    color: '#ffffff',
-    letterSpacing: 0.2,
-  },
-  btnArrow: { position: 'absolute', right: 18 },
-
-  orRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 12 },
-  orLine: { flex: 1, height: 1, backgroundColor: BORDER },
-  orTxt: {
-    fontWeight: '500',
-    fontSize: 12,
-    color: MUTED,
-    marginHorizontal: 14,
-  },
-
-  caWrap: { alignItems: 'center', gap: 3 },
-  caHint: { fontWeight: '400', fontSize: 13.5, color: '#6B7280' },
-  caBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 2 },
-  caLink: { fontWeight: '600', fontSize: 14.5, color: ORANGE },
-
-  /* ─── Illustration ─── */
-  illusContainer: {
-    width: '100%',
-    height: 150,
-    minHeight: 140,
-    position: 'relative',
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
-    marginTop: 16,
-  },
-
-  skyline: {
-    position: 'absolute',
-    bottom: 38,
-    left: 0,
-    right: 0,
-    height: 110,
-    opacity: 0.35,
-  },
-  tower: {
-    position: 'absolute',
-    bottom: 0,
-    backgroundColor: '#CBD5E1',
-    borderTopLeftRadius: 3,
-    borderTopRightRadius: 3,
-  },
-
-  warehouse: {
-    position: 'absolute',
-    bottom: 34,
-    width: 170,
-    height: 64,
-    backgroundColor: '#E2E8F0',
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
-    alignItems: 'center',
-    paddingTop: 4,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    opacity: 0.85,
-  },
-  whRoof: {
-    position: 'absolute',
-    top: -7,
-    left: -5,
-    right: -5,
-    height: 8,
-    backgroundColor: '#CBD5E1',
-    borderRadius: 2.5,
-  },
-  whSign: {
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 10,
-    paddingVertical: 2,
-    borderRadius: 3,
-    borderWidth: 0.8,
-    borderColor: '#94A3B8',
-    marginBottom: 4,
-  },
-  whSignTxt: {
-    fontSize: 8,
+  registerLink: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
     fontWeight: '700',
-    color: NAVY,
-    letterSpacing: 0.8,
+    fontSize: 13,
+    color: '#E31E24',
   },
-  bayRow: {
-    flexDirection: 'row',
-    gap: 7,
-    width: '90%',
-    justifyContent: 'space-between',
-    position: 'absolute',
-    bottom: 0,
-  },
-  bay: {
-    width: 34,
-    height: 30,
-    backgroundColor: '#94A3B8',
-    borderTopLeftRadius: 3,
-    borderTopRightRadius: 3,
-    paddingTop: 4,
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 2.5,
+    paddingHorizontal: 20,
   },
-  bayOpen: { backgroundColor: '#F1F5F9', position: 'relative', overflow: 'hidden' },
-  shutter: { width: '80%', height: 1.5, backgroundColor: '#CBD5E1' },
-  cargo: { position: 'absolute', backgroundColor: ORANGE, borderRadius: 1 },
-
-  fl: { position: 'absolute', bottom: 36, width: 46, height: 38, opacity: 0.85 },
-  flBody: {
-    position: 'absolute',
-    bottom: 4,
-    left: 0,
-    width: 22,
-    height: 14,
-    backgroundColor: '#64748B',
-    borderRadius: 3,
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    width: '100%',
+    maxWidth: 380,
+    padding: 16,
   },
-  flCab: {
-    position: 'absolute',
-    top: 4,
-    left: 5,
-    width: 13,
-    height: 16,
-    borderWidth: 1.8,
-    borderColor: '#475569',
-    borderRadius: 2,
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingBottom: 8,
   },
-  flHead: {
-    position: 'absolute',
-    top: 7,
-    left: 9,
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: '#475569',
+  modalTitle: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    fontSize: 15,
+    color: '#0F172A',
   },
-  flMast: {
-    position: 'absolute',
-    bottom: 0,
-    right: 12,
-    width: 3,
-    height: 34,
-    backgroundColor: '#334155',
+  modalCloseBtn: {
+    padding: 4,
   },
-  flWhl: {
-    position: 'absolute',
-    bottom: 0,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#1E293B',
+  modalSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 38,
+    marginBottom: 8,
+    gap: 6,
   },
-  palBase: {
-    position: 'absolute',
-    bottom: 4,
-    right: 0,
-    width: 12,
-    height: 2.5,
-    backgroundColor: '#B45309',
+  modalSearchInput: {
+    flex: 1,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 12.5,
+    color: '#0F172A',
   },
-  pal1: {
-    position: 'absolute',
-    bottom: 6.5,
-    right: 0,
-    width: 11,
-    height: 10,
-    backgroundColor: ORANGE,
-    borderRadius: 1.5,
+  countryOptionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    marginBottom: 2,
   },
-  pal2: {
-    position: 'absolute',
-    bottom: 17,
-    right: 1,
-    width: 9,
-    height: 8,
-    backgroundColor: ORANGE,
-    opacity: 0.85,
-    borderRadius: 1.5,
+  countryOptionRowSelected: {
+    backgroundColor: '#FEF2F2',
   },
-
-  van: { position: 'absolute', bottom: 36, left: 14, width: 62, height: 30, opacity: 0.8 },
-  vanBody: {
-    position: 'absolute',
-    bottom: 4,
-    left: 0,
-    width: 40,
-    height: 22,
-    backgroundColor: '#94A3B8',
-    borderTopLeftRadius: 3,
+  countryOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  vanCab: {
-    position: 'absolute',
-    bottom: 4,
-    left: 38,
-    width: 22,
-    height: 17,
-    backgroundColor: '#CBD5E1',
-    borderTopRightRadius: 5,
+  countryOptionFlag: {
+    fontSize: 18,
   },
-  vanWin: {
-    position: 'absolute',
-    top: 11,
-    left: 41,
-    width: 12,
-    height: 8,
-    backgroundColor: '#475569',
-    borderTopRightRadius: 3,
+  countryOptionName: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 13,
+    color: '#334155',
   },
-  vanLight: {
-    position: 'absolute',
-    bottom: 7,
-    right: 0,
-    width: 2.5,
-    height: 3.5,
-    backgroundColor: '#FDE047',
-    borderTopLeftRadius: 1,
-    borderBottomLeftRadius: 1,
+  countryOptionRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  vanWhl: {
-    position: 'absolute',
-    bottom: 0,
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
-    backgroundColor: '#334155',
-  },
-
-  ground: {
-    position: 'absolute',
-    bottom: 36,
-    left: 0,
-    right: 0,
-    height: 1.5,
-    backgroundColor: '#CBD5E1',
-    opacity: 0.6,
-  },
-
-  curves: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 40,
-    overflow: 'hidden',
-  },
-  orangeWave: {
-    position: 'absolute',
-    bottom: -30,
-    height: 68,
-    borderRadius: 500,
-    backgroundColor: ORANGE,
-  },
-  navyWave: {
-    position: 'absolute',
-    bottom: -36,
-    height: 68,
-    borderRadius: 500,
-    backgroundColor: NAVY,
+  countryOptionDial: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '600',
+    fontSize: 12.5,
+    color: '#152238',
   },
 });
-
-export default LoginScreen;

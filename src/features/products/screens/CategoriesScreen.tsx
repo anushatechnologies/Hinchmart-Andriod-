@@ -1,723 +1,696 @@
 /**
- * HINCH MART — Enterprise Construction Marketplace Categories Screen
- * Ultra-professional B2B UI/UX featuring Live Category Search, Grid/List View Switcher,
- * Industry Domain Filters, Subcategory Deep Links, and RFQ Procurement Callouts.
+ * HINCH MART — Premium 3-Column Categories Screen
+ *
+ * Senior-Level Production Implementation:
+ * - Responsive 3-Column Grid (3 cards per row dynamically calculated)
+ * - Premium Category Card Design System:
+ *   • Aspect-preserved imagery with smooth expo-image loading & subtle gradient overlay
+ *   • Soft rounded corners, subtle shadows, clean typography
+ *   • Real backend subcategory counts (e.g., 4 Subcategories, 10 Subcategories)
+ *   • Sleek micro-navigation indicator (›) with subtle Hinchmart red branding
+ *   • Native-driven 0.97 scale-down tactile feedback
+ * - Sophisticated Header: Categories title + subtitle + real-time cart badge
+ * - Integrated Search: Modern rounded search bar with instant local filtering
+ * - Zero Frontend Mock Data — 100% live backend API integration
+ * - Smooth 3-Column Skeleton Loading State
+ * - High-performance FlatList virtualization with accessible touch targets
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  ScrollView,
+  Platform,
+  StatusBar,
+  TextInput,
+  RefreshControl,
+  Animated,
+  Dimensions,
+  Pressable,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../../theme';
-import { Screen, Header } from '../../../components/layout/Screen';
-import { SearchBar } from '../../../components/ui/SearchBar';
-import { Card } from '../../../components/ui/Card';
+import { useLiveCategories } from '../../../hooks/useLiveCategories';
+import { ApiCategory } from '../../../types/category.types';
+import { useAppSelector } from '../../../redux/hooks';
+import { selectCartItemCount } from '../../../redux/slices/cartSlice';
+import { CategoriesHubSkeleton } from '../../../components/feedback/SkeletonLoader';
 
-export interface CategoryItem {
-  id: string;
-  name: string;
-  iconName: keyof typeof MaterialCommunityIcons.glyphMap;
-  color: string;
-  bgGradient: [string, string];
-  count: string;
-  industry: 'Civil & Structural' | 'MEP & Electrical' | 'Finishing & Architecture' | 'Heavy Equipment';
-  sla: string;
-  sub: string[];
-  popularSpec?: string;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const HORIZONTAL_PADDING = 16;
+const COLUMN_GAP = 10;
+const NUM_COLUMNS = 3;
+
+// True responsive 3-column card width calculation
+const CARD_WIDTH = Math.floor(
+  (SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - COLUMN_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS
+);
+const CARD_IMAGE_HEIGHT = Math.round(CARD_WIDTH * 0.88);
+
+// ── Premium 3-Column Category Card Component ─────────────────────────────────
+interface PremiumCategoryCardProps {
+  category: ApiCategory;
+  cardWidth: number;
+  imageHeight: number;
+  isDark: boolean;
+  theme: any;
+  onPress: (category: ApiCategory) => void;
 }
 
-export const CATEGORIES_DATA: CategoryItem[] = [
-  {
-    id: 'c1',
-    name: 'Cement & Ready-Mix Concrete',
-    iconName: 'wall',
-    color: '#3B82F6',
-    bgGradient: ['#1E3A8A', '#3B82F6'],
-    count: '450+ Products',
-    industry: 'Civil & Structural',
-    sla: 'Same-Day Bulk Delivery',
-    popularSpec: 'OPC 53 Grade & PPC',
-    sub: ['Ordinary Portland Cement', 'Ready Mix Concrete', 'Concrete Admixtures', 'Fly Ash Blocks', 'Precast Slabs'],
-  },
-  {
-    id: 'c2',
-    name: 'Structural Steel & Rebar',
-    iconName: 'factory',
-    color: '#0284C7',
-    bgGradient: ['#0C4A6E', '#0284C7'],
-    count: '320+ Products',
-    industry: 'Civil & Structural',
-    sla: 'Mill Test Certified',
-    popularSpec: 'Fe 550D & TMT Bars',
-    sub: ['Deformed Rebar (Fe 500/550D)', 'Structural I-Beams & Channels', 'Steel Wire Mesh', 'Stainless Steel Sheets', 'Binding Wire'],
-  },
-  {
-    id: 'c3',
-    name: 'Heavy Machinery & Earthmovers',
-    iconName: 'dump-truck',
-    color: '#D97706',
-    bgGradient: ['#78350F', '#D97706'],
-    count: '180+ Products',
-    industry: 'Heavy Equipment',
-    sla: 'Verified Operator & Fleet',
-    popularSpec: '20-Ton Excavators & Cranes',
-    sub: ['Crawler Excavators', 'Tower Cranes & Hoists', 'Transit Mixers', 'Diesel Generators (100kVA+)', 'Submersible Dewatering Pumps'],
-  },
-  {
-    id: 'c4',
-    name: 'Plumbing, Piping & Drainage',
-    iconName: 'pipe-wrench',
-    color: '#06B6D4',
-    bgGradient: ['#164E63', '#06B6D4'],
-    count: '600+ Products',
-    industry: 'MEP & Electrical',
-    sla: 'ISO/DIN Standards Approved',
-    popularSpec: 'HDPE & Schedule 80 PVC',
-    sub: ['HDPE & UPVC Pressure Pipes', 'Flanged Gate & Butterfly Valves', 'Overhead Water Tanks (5,000L+)', 'Sub-surface Drainage Channels', 'Fire Hydrant Piping'],
-  },
-  {
-    id: 'c5',
-    name: 'Electrical, Cables & Switchgear',
-    iconName: 'lightning-bolt',
-    color: '#EAB308',
-    bgGradient: ['#713F12', '#EAB308'],
-    count: '520+ Products',
-    industry: 'MEP & Electrical',
-    sla: 'UL & CE Certified',
-    popularSpec: '11kV Armored XLPE Cables',
-    sub: ['Armored XLPE High-Voltage Cables', 'Main Distribution Switchgears', '3-Phase Dry Transformers', 'Industrial High-Bay LED Lighting', 'Busbar Trunking Systems'],
-  },
-  {
-    id: 'c6',
-    name: 'Paints, Coatings & Waterproofing',
-    iconName: 'format-paint',
-    color: '#EC4899',
-    bgGradient: ['#831843', '#EC4899'],
-    count: '290+ Products',
-    industry: 'Finishing & Architecture',
-    sla: '10-Year Warranty Tier',
-    popularSpec: 'Bituminous Membranes & Epoxies',
-    sub: ['Weatherproof Exterior Emulsions', 'Bituminous Waterproofing Membrane', 'Epoxy Heavy-Duty Flooring', 'Anti-Corrosive Primers', 'Thermal Insulation Sheeting'],
-  },
-  {
-    id: 'c7',
-    name: 'Industrial Tools & Fasteners',
-    iconName: 'hammer-wrench',
-    color: '#8B5CF6',
-    bgGradient: ['#4C1D95', '#8B5CF6'],
-    count: '750+ Products',
-    industry: 'Civil & Structural',
-    sla: 'Heavy Duty Tool Spec',
-    popularSpec: 'SDS Rotary Hammers & Anchors',
-    sub: ['Rotary SDS Drills & Drivers', 'Chemical Anchor Bolts', 'Diamond Cutting Blades', 'MIG/TIG Welding Machines', 'Laser Distance Scanners'],
-  },
-  {
-    id: 'c8',
-    name: 'Site Safety Equipment (PPE)',
-    iconName: 'hard-hat',
-    color: '#10B981',
-    bgGradient: ['#064E3B', '#10B981'],
-    count: '210+ Products',
-    industry: 'Civil & Structural',
-    sla: 'OSHA & EN Certified',
-    popularSpec: 'Full PPE Kits & Harnesses',
-    sub: ['Vented Hard Hats (EN 397)', 'Full-Body Fall Safety Harnesses', 'Steel-Toe Kevlar Boots', 'High-Visibility Reflective Vests', 'Gas & Dust Respirators'],
-  },
-  {
-    id: 'c9',
-    name: 'Roofing, Cladding & Insulation',
-    iconName: 'home-roof',
-    color: '#F97316',
-    bgGradient: ['#7C2D12', '#F97316'],
-    count: '310+ Products',
-    industry: 'Finishing & Architecture',
-    sla: 'Custom Cut Lengths',
-    popularSpec: 'Galvalume Sheets & PUF Panels',
-    sub: ['Corrugated Galvalume Sheets', 'PUF Insulated Sandwich Panels', 'Polycarbonate Skylight Sheets', 'Rockwool Acoustic Insulation', 'Gutters & Accessories'],
-  },
-  {
-    id: 'c10',
-    name: 'Doors, Windows & Hardware',
-    iconName: 'door-sliding',
-    color: '#6366F1',
-    bgGradient: ['#312E81', '#6366F1'],
-    count: '380+ Products',
-    industry: 'Finishing & Architecture',
-    sla: 'Fire-Rated Certified',
-    popularSpec: '2-Hour Fire Doors & UPVC',
-    sub: ['Steel Fire-Rated Doors', 'Double-Glazed UPVC Windows', 'Heavy Duty Mortise Locks', 'Automatic Sliding Glass Systems', 'Panic Bar Assemblies'],
-  },
-];
+const PremiumCategoryCard = React.memo(
+  function PremiumCategoryCard({
+    category,
+    cardWidth,
+    imageHeight,
+    isDark,
+    theme,
+    onPress,
+  }: PremiumCategoryCardProps) {
+    const [imageError, setImageError] = useState(false);
+    const scaleAnim = useRef(new Animated.Value(1)).current;
 
-const INDUSTRY_FILTERS = [
-  'All Categories',
-  'Civil & Structural',
-  'MEP & Electrical',
-  'Finishing & Architecture',
-  'Heavy Equipment',
-];
+    const handlePressIn = useCallback(() => {
+      Animated.spring(scaleAnim, {
+        toValue: 0.96,
+        useNativeDriver: true,
+        speed: 60,
+        bounciness: 0,
+      }).start();
+    }, [scaleAnim]);
 
-import { categoryApi } from '../../../api/categoryApi';
+    const handlePressOut = useCallback(() => {
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: 40,
+        bounciness: 4,
+      }).start();
+    }, [scaleAnim]);
 
+    const handlePress = useCallback(() => {
+      onPress(category);
+    }, [onPress, category]);
+
+    // Real backend subcategories count
+    const subCount = Array.isArray(category.subCategories) ? category.subCategories.length : 0;
+    const countDisplay =
+      subCount > 0
+        ? `${subCount} Subcat.`
+        : category.productCount
+        ? String(category.productCount).replace('Products', 'Items').replace('+', '')
+        : 'Explore';
+
+    const hasValidImage = Boolean(
+      category.imageUrl &&
+        category.imageUrl.trim().length > 0 &&
+        !category.imageUrl.includes('example.com') &&
+        !imageError
+    );
+
+    return (
+      <Animated.View
+        style={[
+          styles.cardContainer,
+          {
+            width: cardWidth,
+            backgroundColor: theme.colors.cardBackground,
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
+            transform: [{ scale: scaleAnim }],
+          },
+        ]}
+      >
+        <Pressable
+          onPress={handlePress}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel={`${category.name}, ${subCount} subcategories. Double tap to explore.`}
+          style={styles.cardPressable}
+        >
+          {/* 1. Category Image Area */}
+          <View
+            style={[
+              styles.imageContainer,
+              {
+                height: imageHeight,
+                backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
+              },
+            ]}
+          >
+            {hasValidImage ? (
+              <Image
+                source={{ uri: category.imageUrl }}
+                style={styles.categoryImage}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={120}
+                onError={() => setImageError(true)}
+              />
+            ) : (
+              <View style={styles.fallbackIconWrapper}>
+                <MaterialCommunityIcons
+                  name={(category.iconName as any) || 'shape-outline'}
+                  size={28}
+                  color={category.color || '#E31E24'}
+                />
+              </View>
+            )}
+
+            {/* Subtle bottom gradient on image for smooth contrast */}
+            <LinearGradient
+              colors={['transparent', 'rgba(0, 0, 0, 0.28)']}
+              style={styles.imageGradientOverlay}
+            />
+          </View>
+
+          {/* 2. Compact Metadata Area */}
+          <View style={styles.metaContainer}>
+            {/* Row 1: Category Name + Mini Arrow */}
+            <View style={styles.titleRow}>
+              <Text
+                style={[
+                  styles.categoryTitle,
+                  { color: theme.colors.textPrimary },
+                ]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {category.name}
+              </Text>
+              <Ionicons
+                name="chevron-forward"
+                size={11}
+                color="#E31E24"
+                style={styles.arrowIcon}
+              />
+            </View>
+
+            {/* Row 2: Subcategory Count */}
+            <View style={styles.subCountRow}>
+              <MaterialCommunityIcons
+                name="layers-outline"
+                size={12}
+                color="#E31E24"
+                style={styles.layersIcon}
+              />
+              <Text
+                style={[styles.subCountText, { color: theme.colors.textSecondary }]}
+                numberOfLines={1}
+              >
+                {countDisplay}
+              </Text>
+            </View>
+          </View>
+        </Pressable>
+      </Animated.View>
+    );
+  },
+  (prev, next) => {
+    return (
+      (prev.category.id || prev.category.categoryId) === (next.category.id || next.category.categoryId) &&
+      prev.cardWidth === next.cardWidth &&
+      prev.imageHeight === next.imageHeight &&
+      prev.isDark === next.isDark &&
+      prev.onPress === next.onPress &&
+      prev.category.name === next.category.name &&
+      prev.category.imageUrl === next.category.imageUrl &&
+      (prev.category.subCategories?.length || 0) === (next.category.subCategories?.length || 0)
+    );
+  }
+);
+
+// ── Main Categories Screen Component ─────────────────────────────────────────
 export function CategoriesScreen({ navigation }: any) {
   const { theme, isDark } = useTheme();
-  const [categories, setCategories] = useState<CategoryItem[]>(CATEGORIES_DATA);
-  const [selectedFilter, setSelectedFilter] = useState('All Categories');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const insets = useSafeAreaInsets();
+  const cartCount = useAppSelector(selectCartItemCount);
 
-  // Fetch live categories from backend: GET /api/categories
-  const fetchCategories = async (showLoading = true) => {
-    if (showLoading) setIsLoading(true);
+  // 100% Real Live Backend Categories (Zero Frontend Mock Data)
+  const {
+    categories: liveCategories,
+    isLoading: isCategoriesLoading,
+    error: categoriesError,
+    refetch: refetchCategories,
+  } = useLiveCategories();
+
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  // Filter out any artificial 'all' master categories and preserve backend ordering
+  const validCategories = useMemo(() => {
+    return liveCategories
+      .filter((c) => c.slug !== 'all' && c.categoryId !== 'all' && c.id !== 'all')
+      .sort((a, b) => {
+        const orderA = typeof a.sortOrder === 'number' ? a.sortOrder : 999;
+        const orderB = typeof b.sortOrder === 'number' ? b.sortOrder : 999;
+        return orderA - orderB;
+      });
+  }, [liveCategories]);
+
+  // Real-time search filtering on real category names & descriptions
+  const filteredCategories = useMemo(() => {
+    if (!searchQuery.trim()) return validCategories;
+    const q = searchQuery.toLowerCase().trim();
+    return validCategories.filter((cat) => {
+      const name = (cat.name || '').toLowerCase();
+      const desc = (cat.description || '').toLowerCase();
+      const slug = (cat.slug || '').toLowerCase();
+      return name.includes(q) || desc.includes(q) || slug.includes(q);
+    });
+  }, [validCategories, searchQuery]);
+
+  // Pull-to-refresh handler
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
     try {
-      const response = await categoryApi.getCategories();
-      const apiData = response.data?.data || (response.data as any);
-      if (Array.isArray(apiData) && apiData.length > 0) {
-        // Map backend category format to screen category item
-        const mapped: CategoryItem[] = apiData.map((c: any, idx: number) => ({
-          id: c.id || `cat_${idx}`,
-          name: c.name,
-          iconName: (c.icon || 'wall') as any,
-          color: c.color || CATEGORIES_DATA[idx % CATEGORIES_DATA.length]?.color || '#3B82F6',
-          bgGradient: c.bgGradient || CATEGORIES_DATA[idx % CATEGORIES_DATA.length]?.bgGradient || ['#1E3A8A', '#3B82F6'],
-          count: c.productCount ? `${c.productCount}+ Products` : `${c.count || '100+ Products'}`,
-          industry: c.industry || 'Civil & Structural',
-          sla: c.sla || 'Standard Delivery',
-          popularSpec: c.popularSpec || '',
-          sub: Array.isArray(c.subCategories) ? c.subCategories.map((s: any) => typeof s === 'string' ? s : s.name) : (c.sub || []),
-        }));
-        setCategories(mapped);
+      await refetchCategories();
+    } catch (err) {
+      if (__DEV__) {
+        console.log('[CategoriesScreen] Refresh notice:', err);
       }
-    } catch (error) {
-      console.log('[CategoriesScreen] API fetch fallback to standard category list');
     } finally {
-      setIsLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, [refetchCategories]);
 
-  React.useEffect(() => {
-    fetchCategories(false);
-  }, []);
+  // Category navigation — opens unified Category & Product Listing Screen
+  const handleCategoryPress = useCallback(
+    (category: ApiCategory) => {
+      navigation.navigate('Subcategories', {
+        categoryId: String(category.categoryId || category.id),
+        categoryName: category.name,
+        categorySlug: category.slug,
+        categoryImage: category.imageUrl,
+      });
+    },
+    [navigation]
+  );
 
-  // Filter Categories dynamically based on industry and search query
-  const filteredCategories = useMemo(() => {
-    return categories.filter((cat) => {
-      const matchesIndustry =
-        selectedFilter === 'All Categories' || cat.industry === selectedFilter;
-      const matchesSearch =
-        searchQuery.trim() === '' ||
-        cat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        cat.sub.some((s) => s.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (cat.popularSpec && cat.popularSpec.toLowerCase().includes(searchQuery.toLowerCase()));
-      return matchesIndustry && matchesSearch;
-    });
-  }, [categories, selectedFilter, searchQuery]);
+  // Render Category Item for FlatList
+  const renderCategoryItem = useCallback(
+    ({ item }: { item: ApiCategory }) => {
+      return (
+        <PremiumCategoryCard
+          category={item}
+          cardWidth={CARD_WIDTH}
+          imageHeight={CARD_IMAGE_HEIGHT}
+          isDark={isDark}
+          theme={theme}
+          onPress={handleCategoryPress}
+        />
+      );
+    },
+    [isDark, theme, handleCategoryPress]
+  );
+
+  const isNavigatingToCartRef = useRef(false);
+
+  const handleCartPress = useCallback(() => {
+    if (isNavigatingToCartRef.current) return;
+    isNavigatingToCartRef.current = true;
+    setTimeout(() => {
+      isNavigatingToCartRef.current = false;
+    }, 600);
+    navigation.navigate('Cart');
+  }, [navigation]);
 
   return (
-    <Screen scrollable={false}>
-      <Header
-        title="Procurement Categories"
-        showBack={false}
-        showNotification
-        onNotificationPress={() => navigation.navigate('Notifications')}
-      />
+    <View style={[styles.screenRoot, { backgroundColor: isDark ? '#0B0F19' : '#F8FAFC' }]}>
+      <StatusBar barStyle="light-content" backgroundColor="#E31E24" translucent />
 
-      {/* Top Controls: Search Bar + Layout Switcher */}
-      <View style={[styles.topControlContainer, { backgroundColor: theme.colors.surface }]}>
-        <View style={{ flex: 1, marginRight: 10 }}>
-          <SearchBar
+      {/* ── 1. Sophisticated Header Bar (Hinchmart Signature Red) ─────────── */}
+      <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top, 24) }]}>
+        <View style={styles.headerContentRow}>
+          <View style={styles.headerTextWrap}>
+            <Text style={styles.headerTitle}>Categories</Text>
+            <Text style={styles.headerSubtitle}>
+              Explore building & improvement materials
+            </Text>
+          </View>
+
+          {/* Cart Icon with Live Badge */}
+          <TouchableOpacity
+            onPress={handleCartPress}
+            activeOpacity={0.75}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={styles.cartBtn}
+            accessibilityLabel="Open shopping cart"
+            accessibilityRole="button"
+          >
+            <Ionicons name="cart-outline" size={24} color="#FFFFFF" />
+            {cartCount > 0 && (
+              <View style={styles.cartBadge} pointerEvents="none">
+                <Text style={styles.cartBadgeText}>
+                  {cartCount > 99 ? '99+' : cartCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ── 2. Modern Rounded Search Bar ──────────────────────────────────── */}
+      <View
+        style={[
+          styles.searchSectionWrap,
+          {
+            backgroundColor: isDark ? '#0B0F19' : '#F8FAFC',
+            borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : '#EEF2F6',
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.searchBarBox,
+            {
+              backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+              borderColor: isDark ? '#334155' : '#E2E8F0',
+            },
+          ]}
+        >
+          <Ionicons name="search-outline" size={18} color="#E31E24" />
+          <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search 3,500+ categories or specs..."
-            onClear={() => setSearchQuery('')}
+            placeholder="Search categories..."
+            placeholderTextColor={isDark ? '#94A3B8' : '#94A3B8'}
+            returnKeyType="search"
+            style={[styles.searchInput, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
           />
-        </View>
-
-        {/* View Switcher Button */}
-        <TouchableOpacity
-          onPress={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
-          style={[styles.viewToggleBtn, { backgroundColor: theme.colors.navy }]}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name={viewMode === 'list' ? 'grid-outline' : 'list-outline'}
-            size={18}
-            color="#FFF"
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* Industry Filter Pills Scroll Row */}
-      <View style={[styles.filterScrollWrap, { borderBottomColor: theme.colors.border }]}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterList}
-        >
-          {INDUSTRY_FILTERS.map((item) => {
-            const active = item === selectedFilter;
-            return (
-              <TouchableOpacity
-                key={item}
-                onPress={() => setSelectedFilter(item)}
-                style={[
-                  styles.filterPill,
-                  {
-                    backgroundColor: active ? theme.colors.navy : theme.colors.surfaceVariant,
-                    borderColor: active ? theme.colors.primary : theme.colors.border,
-                  },
-                ]}
-                activeOpacity={0.7}
-              >
-                {active && (
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={13}
-                    color={theme.colors.primary}
-                    style={{ marginRight: 5 }}
-                  />
-                )}
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    { color: active ? '#FFFFFF' : theme.colors.textSecondary },
-                  ]}
-                >
-                  {item}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      {/* Bulk RFQ Quick Banner */}
-      <TouchableOpacity
-        onPress={() => navigation.navigate('MainTabs', { screen: 'RFQTab' })}
-        activeOpacity={0.9}
-        style={styles.rfqBannerWrap}
-      >
-        <LinearGradient
-          colors={['#152238', '#0B0F17']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.rfqBannerGradient}
-        >
-          <View style={styles.rfqBannerLeft}>
-            <View style={styles.rfqIconCircle}>
-              <Ionicons name="document-text-outline" size={18} color="#FDB913" />
-            </View>
-            <View>
-              <Text style={styles.rfqBannerTitle}>Can't Find Custom Specifications?</Text>
-              <Text style={styles.rfqBannerSubtitle}>Submit a direct RFQ for bulk factory orders</Text>
-            </View>
-          </View>
-
-          <View style={styles.rfqActionBadge}>
-            <Text style={styles.rfqActionText}>Create RFQ</Text>
-            <Ionicons name="arrow-forward" size={12} color="#152238" style={{ marginLeft: 3 }} />
-          </View>
-        </LinearGradient>
-      </TouchableOpacity>
-
-      {/* Category Results Count Summary */}
-      <View style={styles.resultMetaRow}>
-        <Text style={[styles.resultMetaText, { color: theme.colors.textSecondary }]}>
-          Showing <Text style={{ color: theme.colors.navy, fontFamily: 'Inter_700Bold' }}>{filteredCategories.length}</Text> Categories
-        </Text>
-        <Text style={[styles.resultMetaBadge, { color: theme.colors.primary }]}>
-          Wholesale Verified
-        </Text>
-      </View>
-
-      {/* Main Categories Display (List or 2-Column Grid) */}
-      <FlatList
-        key={viewMode}
-        data={filteredCategories}
-        numColumns={viewMode === 'grid' ? 2 : 1}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listPadding}
-        renderItem={({ item }) => {
-          if (viewMode === 'grid') {
-            return (
-              <TouchableOpacity
-                onPress={() => navigation.navigate('ProductList', { categoryId: item.id })}
-                activeOpacity={0.85}
-                style={styles.gridCardWrapper}
-              >
-                <Card variant="outlined" style={styles.gridCardInner}>
-                  <LinearGradient
-                    colors={[`${item.color}25`, `${item.color}05`]}
-                    style={styles.gridIconHeader}
-                  >
-                    <MaterialCommunityIcons name={item.iconName} size={30} color={item.color} />
-                    <View style={[styles.gridCountChip, { backgroundColor: `${item.color}20` }]}>
-                      <Text style={[styles.gridCountText, { color: item.color }]}>{item.count.split('+')[0]}+</Text>
-                    </View>
-                  </LinearGradient>
-
-                  <View style={styles.gridBody}>
-                    <Text numberOfLines={2} style={[styles.gridCatName, { color: theme.colors.textPrimary }]}>
-                      {item.name}
-                    </Text>
-
-                    <View style={styles.gridSlaBadge}>
-                      <Ionicons name="flash-outline" size={11} color={theme.colors.primary} style={{ marginRight: 3 }} />
-                      <Text numberOfLines={1} style={[styles.gridSlaText, { color: theme.colors.textSecondary }]}>
-                        {item.sla}
-                      </Text>
-                    </View>
-
-                    <View style={styles.gridSubPreview}>
-                      <Text numberOfLines={1} style={[styles.gridSubText, { color: theme.colors.textTertiary }]}>
-                        {item.sub.slice(0, 2).join(' • ')}
-                      </Text>
-                    </View>
-                  </View>
-                </Card>
-              </TouchableOpacity>
-            );
-          }
-
-          return (
-            <Card
-              onPress={() => navigation.navigate('ProductList', { categoryId: item.id })}
-              variant="outlined"
-              style={styles.catCard}
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <View style={styles.catCardInner}>
-                {/* Left Colored Accent Strip */}
-                <View style={[styles.accentStrip, { backgroundColor: item.color }]} />
+              <Ionicons name="close-circle" size={17} color="#94A3B8" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
 
-                <View style={styles.catContent}>
-                  <View style={styles.catHeader}>
-                    <LinearGradient
-                      colors={[`${item.color}22`, `${item.color}08`]}
-                      style={styles.iconWrapper}
-                    >
-                      <MaterialCommunityIcons name={item.iconName} size={28} color={item.color} />
-                    </LinearGradient>
-
-                    <View style={styles.catMeta}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Text style={[styles.catName, { color: theme.colors.textPrimary }]}>
-                          {item.name}
-                        </Text>
-                        <View style={[styles.countBadge, { backgroundColor: `${item.color}18` }]}>
-                          <Text style={[styles.catCount, { color: item.color }]}>{item.count}</Text>
-                        </View>
-                      </View>
-
-                      {/* Specs and SLA subheader */}
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                        <View style={styles.slaChip}>
-                          <Ionicons name="shield-checkmark" size={11} color={theme.colors.primary} style={{ marginRight: 3 }} />
-                          <Text style={[styles.slaText, { color: theme.colors.textSecondary }]}>{item.sla}</Text>
-                        </View>
-                        {item.popularSpec && (
-                          <Text numberOfLines={1} style={[styles.specText, { color: theme.colors.textTertiary }]}>
-                            • {item.popularSpec}
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-
-                    <View style={[styles.arrowCircle, { backgroundColor: `${theme.colors.primary}20` }]}>
-                      <Ionicons name="chevron-forward" size={16} color={theme.colors.navy} />
-                    </View>
-                  </View>
-
-                  {/* Subcategory Pills Row */}
-                  <View style={styles.chipRow}>
-                    {item.sub.map((sub, i) => (
-                      <TouchableOpacity
-                        key={i}
-                        onPress={() => navigation.navigate('ProductList', { categoryId: item.id, subCategory: sub })}
-                        activeOpacity={0.7}
-                        style={[styles.subBadge, { backgroundColor: theme.colors.surfaceVariant }]}
-                      >
-                        <View style={[styles.chipDot, { backgroundColor: item.color }]} />
-                        <Text style={[styles.subBadgeText, { color: theme.colors.textSecondary }]}>{sub}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            </Card>
-          );
-        }}
-      />
-    </Screen>
+      {/* ── 3. 3-Column Category Grid Content Area ────────────────────────── */}
+      {isCategoriesLoading && validCategories.length === 0 ? (
+        <CategoriesHubSkeleton />
+      ) : categoriesError && validCategories.length === 0 ? (
+        <View style={styles.stateWrapper}>
+          <View style={[styles.stateIconCircle, { backgroundColor: isDark ? '#1E293B' : '#FEF2F2' }]}>
+            <Ionicons name="cloud-offline-outline" size={38} color="#EF4444" />
+          </View>
+          <Text style={[styles.stateTitle, { color: theme.colors.textPrimary }]}>
+            Unable to load categories
+          </Text>
+          <Text style={[styles.stateSubtitle, { color: theme.colors.textSecondary }]}>
+            Please check your internet connection and try again.
+          </Text>
+          <TouchableOpacity
+            onPress={refetchCategories}
+            activeOpacity={0.8}
+            style={styles.retryBtn}
+          >
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : filteredCategories.length === 0 ? (
+        <View style={styles.stateWrapper}>
+          <View style={[styles.stateIconCircle, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
+            <Ionicons name="search-outline" size={38} color="#94A3B8" />
+          </View>
+          <Text style={[styles.stateTitle, { color: theme.colors.textPrimary }]}>
+            No categories found
+          </Text>
+          <Text style={[styles.stateSubtitle, { color: theme.colors.textSecondary }]}>
+            {searchQuery
+              ? `No categories matching "${searchQuery}". Try another search term.`
+              : 'No categories are currently available in the catalog.'}
+          </Text>
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              activeOpacity={0.8}
+              style={styles.retryBtn}
+            >
+              <Text style={styles.retryBtnText}>Clear Search</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : (
+        <FlatList
+          data={filteredCategories}
+          renderItem={renderCategoryItem}
+          keyExtractor={(item) => String(item.categoryId || item.id || item.slug)}
+          numColumns={NUM_COLUMNS}
+          columnWrapperStyle={styles.columnWrapper}
+          contentContainerStyle={[
+            styles.gridContentContainer,
+            { paddingBottom: Math.max(insets.bottom, 20) + 80 },
+          ]}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={9}
+          maxToRenderPerBatch={9}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor="#E31E24"
+              colors={['#E31E24']}
+            />
+          }
+        />
+      )}
+    </View>
   );
 }
 
+// ── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  topControlContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  screenRoot: {
+    flex: 1,
+  },
+
+  // ── Header Bar ──
+  headerContainer: {
+    backgroundColor: '#E31E24',
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 6,
+    paddingBottom: 12,
+    elevation: 4,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
   },
-  viewToggleBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  filterScrollWrap: {
-    paddingVertical: 8,
-    borderBottomWidth: 0.5,
-  },
-  filterList: {
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  filterPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginRight: 6,
-  },
-  filterPillText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
-  },
-  rfqBannerWrap: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  rfqBannerGradient: {
+  headerContentRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(253, 185, 19, 0.35)',
-    borderRadius: 14,
+    minHeight: 46,
   },
-  rfqBannerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  headerTextWrap: {
     flex: 1,
+    paddingRight: 10,
   },
-  rfqIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: 'rgba(253, 185, 19, 0.15)',
+  headerTitle: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '800',
+    fontSize: 20,
+    color: '#FFFFFF',
+    letterSpacing: -0.3,
+  },
+  headerSubtitle: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 11.5,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginTop: 1,
+    letterSpacing: 0.1,
+  },
+  cartBtn: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  rfqBannerTitle: {
-    color: '#FFF',
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 12,
-  },
-  rfqBannerSubtitle: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontFamily: 'Inter_400Regular',
-    fontSize: 10,
-  },
-  rfqActionBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FDB913',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  rfqActionText: {
-    color: '#152238',
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-  },
-  resultMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 6,
-  },
-  resultMetaText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 12,
-  },
-  resultMetaBadge: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 11,
-    letterSpacing: 0.3,
-  },
-  listPadding: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 110,
-  },
-  catCard: {
-    marginBottom: 12,
-    padding: 0,
-    overflow: 'hidden',
-    borderRadius: 18,
-  },
-  catCardInner: {
-    flexDirection: 'row',
-  },
-  accentStrip: {
-    width: 4,
-    borderTopLeftRadius: 18,
-    borderBottomLeftRadius: 18,
-  },
-  catContent: {
-    flex: 1,
-    padding: 14,
-  },
-  catHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    direction: 'ltr',
-  },
-  iconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  catMeta: {
-    flex: 1,
-    marginLeft: 12,
-    marginRight: 6,
-  },
-  catName: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 14,
-    flex: 1,
-  },
-  countBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    marginLeft: 6,
-  },
-  catCount: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
-  },
-  slaChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  slaText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 11,
-  },
-  specText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    marginLeft: 4,
-  },
-  arrowCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 12,
-    direction: 'ltr',
-  },
-  subBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    marginRight: 6,
-    marginBottom: 6,
-  },
-  chipDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    marginRight: 6,
-  },
-  subBadgeText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-  },
-  gridCardWrapper: {
-    flex: 0.5,
-    padding: 5,
-  },
-  gridCardInner: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    padding: 0,
-  },
-  gridIconHeader: {
-    height: 70,
-    justifyContent: 'center',
-    alignItems: 'center',
     position: 'relative',
   },
-  gridCountChip: {
+  cartBadge: {
     position: 'absolute',
-    top: 6,
-    right: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    top: 2,
+    right: 2,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 9,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
   },
-  gridCountText: {
+  cartBadgeText: {
+    color: '#E31E24',
     fontSize: 9,
-    fontFamily: 'Inter_700Bold',
+    fontWeight: '800',
   },
-  gridBody: {
-    padding: 10,
+
+  // ── Search Bar Section ──
+  searchSectionWrap: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
   },
-  gridCatName: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 12,
-    height: 34,
-  },
-  gridSlaBadge: {
+  searchBarBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    height: 42,
+    gap: 8,
+    elevation: 1,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
   },
-  gridSlaText: {
-    fontSize: 10,
-    fontFamily: 'Inter_500Medium',
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    paddingVertical: 0,
+    fontWeight: '400',
   },
-  gridSubPreview: {
-    marginTop: 6,
-    paddingTop: 6,
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(0,0,0,0.06)',
+
+  // ── Grid & Column ──
+  gridContentContainer: {
+    paddingHorizontal: HORIZONTAL_PADDING,
+    paddingTop: 14,
   },
-  gridSubText: {
-    fontSize: 9,
-    fontFamily: 'Inter_400Regular',
+  columnWrapper: {
+    gap: COLUMN_GAP,
+    marginBottom: 12,
+  },
+
+  // ── Premium Category Card ──
+  cardContainer: {
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 5,
+  },
+  cardPressable: {
+    width: '100%',
+  },
+  imageContainer: {
+    width: '100%',
+    position: 'relative',
+    overflow: 'hidden',
+    borderTopLeftRadius: 11,
+    borderTopRightRadius: 11,
+  },
+  categoryImage: {
+    width: '100%',
+    height: '100%',
+  },
+  fallbackIconWrapper: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageGradientOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 32,
+  },
+
+  // ── Card Metadata ──
+  metaContainer: {
+    paddingHorizontal: 7,
+    paddingVertical: 7,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 3,
+  },
+  categoryTitle: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    fontSize: 11.5,
+    flex: 1,
+    letterSpacing: -0.2,
+  },
+  arrowIcon: {
+    marginLeft: 2,
+  },
+  subCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  layersIcon: {
+    marginTop: 0.5,
+  },
+  subCountText: {
+    fontSize: 11,
+    fontWeight: '500',
+    flex: 1,
+  },
+
+  // ── State Screens (Error & Empty) ──
+  stateWrapper: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 40,
+    minHeight: 300,
+  },
+  stateIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  stateTitle: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 6,
+    letterSpacing: -0.2,
+  },
+  stateSubtitle: {
+    fontSize: 12.5,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 18,
+  },
+  retryBtn: {
+    backgroundColor: '#E31E24',
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 8,
+    elevation: 2,
+    shadowColor: '#E31E24',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  retryBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 12.5,
   },
 });

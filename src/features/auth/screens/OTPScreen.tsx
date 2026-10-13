@@ -1,504 +1,833 @@
 /**
- * HINCH MART — OTP Verification Screen (Frontend-Only)
- *
- * Manual OTP: 123456
- * - Existing user (9876543210) → MainTabs
- * - New user → RegistrationDetails
+ * HINCH MART — Clean & Modern OTP Verification Screen
+ * Simple, neat, and distraction-free design:
+ * - Clean top navigation bar with back arrow
+ * - Soft brand icon badge (Shield & Key)
+ * - Clear headline "Verify Phone Number"
+ * - Clean masked phone capsule with "Change" action
+ * - 6 rounded crisp OTP digit boxes with auto-advance and paste support
+ * - Automatic direct OTP retrieval & seamless login
+ * - Clean resend timer with active link
+ * - Sleek brand action button "Verify & Continue"
+ * - End-to-end encryption security badge
  */
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
   TextInput,
-  StyleSheet,
   TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
   ScrollView,
+  Animated,
   StatusBar,
+  Keyboard,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../../../theme';
-import { Button } from '../../../components/ui/Button';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { authStore } from '../../../store/authStore';
-import { AUTH_CONFIG } from '../../../config/authConfig';
-
-const OTP_LENGTH = 6;
-const RESEND_SECONDS = AUTH_CONFIG.resendSeconds || 45;
-
-function maskPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length >= 10) {
-    return `+91 XXXXX ${digits.slice(-5)}`;
-  }
-  return phone;
-}
+import { authApi } from '../../../services/api/auth.api';
+import {
+  getActiveConfirmationResult,
+  verifyFirebasePhoneOtp,
+  verifyPhoneOtpWithSessionInfo,
+  sendFirebasePhoneOtp,
+  isGenericName,
+} from '../../../services/api/firebaseAuth';
+import { FirebaseRecaptchaModal } from '../../../components/auth/FirebaseRecaptchaModal';
+import { cartApi } from '../../../services/api/cart.api';
+import { cartAuthGuard } from '../../../services/cart/cartAuthGuard';
+import { setServerCart, selectCartItems } from '../../../redux/slices/cartSlice';
+import { store } from '../../../redux';
+import {
+  navigateToPostAuthScreen,
+  syncSavedGuestAddressIfNeeded,
+} from '../../../services/checkout/checkoutAuthGuard';
 
 export function OTPScreen({ route, navigation }: any) {
-  const { theme, isDark } = useTheme();
-  const { phone = '+919876543210', purpose = 'login' } = route?.params ?? {};
+  const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
 
-  const [digits, setDigits] = useState<string[]>(Array(OTP_LENGTH).fill(''));
-  const [focusedIndex, setFocusedIndex] = useState(0);
-  const [countdown, setCountdown] = useState(RESEND_SECONDS);
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
-
-  const inputRefs = useRef<Array<TextInput | null>>(
-    Array.from({ length: OTP_LENGTH }, () => null)
-  );
-
-  // Countdown
   useEffect(() => {
-    if (countdown <= 0) return;
-    const t = setTimeout(() => setCountdown((p) => p - 1), 1000);
-    return () => clearTimeout(t);
-  }, [countdown]);
-
-  // Autofocus
-  useEffect(() => {
-    const t = setTimeout(() => inputRefs.current[0]?.focus(), 250);
-    return () => clearTimeout(t);
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setIsKeyboardOpen(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setIsKeyboardOpen(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
   }, []);
 
-  // ── Verify OTP ─────────────────────────────────────────────────────────────
-  const triggerVerify = useCallback(
-    async (otpDigits: string[]) => {
-      const otpCode = otpDigits.join('');
-      if (otpCode.length < OTP_LENGTH || isVerifying) return;
+  const rawPhone = String(route?.params?.phone || route?.params?.identifier || '');
+  const countryDial = route?.params?.countryDial || '+91';
+  const isNewUser = route?.params?.isNewUser || false;
+  const fullPhone =
+    route?.params?.fullPhone || `${countryDial}${rawPhone.replace(/[^0-9]/g, '')}`;
 
-      setIsVerifying(true);
-      setError('');
+  // Masked phone format: +91 ••••• •••XX
+  const maskedPhone = useMemo(() => {
+    const digitsOnly = rawPhone.replace(/[^0-9]/g, '');
+    if (!digitsOnly) return '';
+    const lastTwo = digitsOnly.length >= 2 ? digitsOnly.slice(-2) : digitsOnly;
+    return `${countryDial} ••••• •••${lastTwo}`;
+  }, [rawPhone, countryDial]);
 
+  // 6 separate box digits - start completely empty for manual user entry
+  const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const [otpError, setOtpError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(30);
+  const [activeVerificationId, setActiveVerificationId] = useState<string>(
+    route?.params?.verificationId || ''
+  );
+  const [recaptchaVisible, setRecaptchaVisible] = useState(false);
+
+  // Refs for 6 input boxes
+  const inputRefs = useRef<Array<TextInput | null>>([]);
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+
+  // If no phone number was passed, redirect back to Login
+  useEffect(() => {
+    if (!rawPhone) {
+      navigation.replace('Login');
+    }
+  }, [rawPhone]);
+
+  // 30-Second Resend Countdown Timer
+  useEffect(() => {
+    if (timerSeconds <= 0) return;
+    const interval = setInterval(() => {
+      setTimerSeconds((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [timerSeconds]);
+
+  // Auto-verify when all 6 digits are entered
+  useEffect(() => {
+    const complete = digits.join('');
+    if (complete.length === 6 && !isLoading && !otpError) {
+      const t = setTimeout(() => verifyOtp(complete), 250);
+      return () => clearTimeout(t);
+    }
+  }, [digits]);
+
+  const handleDigitChange = (text: string, index: number) => {
+    if (otpError) setOtpError('');
+
+    // Handle full 6-digit paste
+    const digitsOnly = text.replace(/[^0-9]/g, '');
+    if (digitsOnly.length === 6) {
+      const pasted = digitsOnly.split('');
+      setDigits(pasted);
+      inputRefs.current[5]?.focus();
+      return;
+    }
+
+    const val = digitsOnly.slice(-1);
+    const newDigits = [...digits];
+    newDigits[index] = val;
+    setDigits(newDigits);
+
+    // Auto-advance to next box
+    if (val && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyPress = (e: any, index: number) => {
+    if (e.nativeEvent.key === 'Backspace' && !digits[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (timerSeconds > 0 || isLoading) return;
+    setOtpError('');
+
+    const fullPhone =
+      route?.params?.fullPhone || `${countryDial}${rawPhone.replace(/[^0-9]/g, '')}`;
+
+    if (Platform.OS === 'web') {
+      setIsLoading(true);
       try {
-        // Simulate short processing time
-        await new Promise((r) => setTimeout(r, 400));
+        await sendFirebasePhoneOtp(fullPhone);
+        setIsLoading(false);
+        setTimerSeconds(30);
+        setDigits(['', '', '', '', '', '']);
+        inputRefs.current[0]?.focus();
+      } catch (err: any) {
+        setIsLoading(false);
+        setOtpError(err?.message || 'Failed to resend OTP. Please try again.');
+        triggerShake();
+      }
+    } else {
+      // Trigger invisible background SMS send (no visible reCAPTCHA)
+      setIsLoading(true);
+      setRecaptchaVisible(true);
+    }
+  };
 
-        // ── FRONTEND-ONLY VALIDATION ────────────────────────────────────────
-        if (otpCode !== AUTH_CONFIG.developmentOtp) {
-          throw new Error('Invalid OTP. Please enter the correct OTP.');
-        }
+  const handleRecaptchaSuccess = (newVerificationId: string) => {
+    setIsLoading(false);
+    setRecaptchaVisible(false);
+    setActiveVerificationId(newVerificationId);
+    setTimerSeconds(30);
+    setDigits(['', '', '', '', '', '']);
+    inputRefs.current[0]?.focus();
+  };
 
-        // Check if existing user
-        const clean = (p: string) => p.replace(/\D/g, '').slice(-10);
-        const last10 = clean(phone);
-        const isExisting = AUTH_CONFIG.mockExistingUsers.map(clean).includes(last10);
+  const handleRecaptchaError = (err: string) => {
+    setIsLoading(false);
+    setRecaptchaVisible(false);
+    setOtpError(err || 'Failed to resend code. Please try again.');
+  };
 
-        setSuccessMsg('OTP verified successfully!');
-        await new Promise((r) => setTimeout(r, 450));
+  const triggerShake = () => {
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 8, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -8, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 6, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -6, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
+    ]).start();
+  };
 
-        // Retrieve existing profile or generate user profile for the phone number
-        const existingProfile =
-          AUTH_CONFIG.mockExistingUserProfiles[last10] ||
-          AUTH_CONFIG.mockExistingUserProfiles['9876543210'];
+  const verifyOtp = async (codeToVerify?: string) => {
+    const code = codeToVerify || digits.join('');
+    if (code.length < 6) {
+      setOtpError('Please enter all 6 digits');
+      triggerShake();
+      return;
+    }
 
-        const userProfile = existingProfile || {
-          id: `usr_${last10 || Date.now()}`,
-          phone: phone.startsWith('+91') ? phone : `+91${phone}`,
-          firstName: 'User',
-          lastName: last10.slice(-4) || 'Member',
-          fullName: `User ${last10.slice(-4) || ''}`.trim(),
-          email: null,
-          accountType: 'individual' as const,
-          businessProfile: null,
-          isVerified: true,
-          isPhoneVerified: true,
-          isEmailVerified: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
+    setIsLoading(true);
+    setOtpError('');
 
-        // Save authenticated session locally and into Redux
-        await authStore.saveSession({
-          user: userProfile,
-          accessToken: `mock_access_${Date.now()}`,
-          refreshToken: `mock_refresh_${Date.now()}`,
+    try {
+      const payload = route?.params?.registrationPayload;
+      const targetPhone = fullPhone || rawPhone.trim();
+      // Only use name if explicitly provided by registration screen, never synthetic/cached for phone-only logins
+      const explicitName = payload?.fullName?.trim() || undefined;
+
+      // 1. If active verificationId from native reCAPTCHA bridge exists, verify via Firebase REST & sync
+      if (activeVerificationId) {
+        const syncResult = await verifyPhoneOtpWithSessionInfo(activeVerificationId, code, {
+          phone: targetPhone,
+          name: explicitName,
+          email: route?.params?.email || payload?.email,
+          companyName: payload?.companyName,
+          businessType: payload?.businessType,
+          gstNumber: payload?.gstNumber,
+          panNumber: payload?.panNumber,
+          role: 'BUYER',
         });
 
-        // Navigate directly to HOME (MainTabs)
-        navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
-      } catch (err: any) {
-        setError(err?.message || 'Invalid OTP. Please enter the correct OTP.');
-        setDigits(Array(OTP_LENGTH).fill(''));
-        setFocusedIndex(0);
-        setTimeout(() => inputRefs.current[0]?.focus(), 100);
-      } finally {
-        setIsVerifying(false);
-      }
-    },
-    [phone, isVerifying, navigation]
-  );
+        if (explicitName) {
+          authStore.saveRegisteredUserName(targetPhone, explicitName);
+        }
+        authStore.markPhoneRegistered(targetPhone);
 
-  // ── Input handlers ──────────────────────────────────────────────────────────
-  const handleChangeText = useCallback(
-    (text: string, index: number) => {
-      setError('');
-      setSuccessMsg('');
+        // Post-login guest cart sync
+        try {
+          const guestItems = selectCartItems(store.getState());
+          const currentStoreId = (store.getState().cart as any)?.storeId;
+          if (Array.isArray(guestItems) && guestItems.length > 0) {
+            const syncPayload = guestItems.map((item: any) => ({
+              productId: item.productId,
+              quantity: item.quantity || 1,
+            }));
+            const mergedCart = await cartApi.syncGuestCart(syncPayload, currentStoreId);
+            if (mergedCart) store.dispatch(setServerCart(mergedCart));
+          } else {
+            const serverCart = await cartApi.getCart();
+            if (serverCart) store.dispatch(setServerCart(serverCart));
+          }
+        } catch {
+          // Non-blocking: cart sync failure should not prevent login
+        }
 
-      if (text.length > 1) {
-        const pasted = text.replace(/\D/g, '').slice(0, OTP_LENGTH);
-        const next = Array(OTP_LENGTH).fill('');
-        pasted.split('').forEach((d, i) => { next[i] = d; });
-        setDigits(next);
-        const target = Math.min(pasted.length, OTP_LENGTH - 1);
-        setFocusedIndex(target);
-        inputRefs.current[target]?.focus();
-        if (pasted.length === OTP_LENGTH) triggerVerify(next);
+        // Execute pending Add to Cart action if user was prompted to login/register from Add to Cart
+        if (cartAuthGuard.hasPendingAction()) {
+          try {
+            await cartAuthGuard.executePendingAction(store.dispatch);
+          } catch (pendingErr) {
+            console.warn('[OTPScreen] Pending cart action execution error:', pendingErr);
+          }
+        }
+
+        setIsLoading(false);
+
+        // Step 6: Frontend inspects the response:
+        // - If "name" is null: show Profile Completion screen (email is optional).
+        // - If all required details exist: navigate to Home/Dashboard.
+        const returnedName = syncResult?.syncUser?.name;
+        const returnedEmail = syncResult?.syncUser?.email;
+        const isNameComplete = Boolean(
+          returnedName &&
+          !isGenericName(returnedName) &&
+          returnedName.trim().length > 0
+        );
+        const isComplete =
+          isNameComplete &&
+          syncResult?.syncUser?.profileComplete !== false &&
+          (syncResult?.syncUser as any)?.isProfileComplete !== false;
+
+        const returnScreen = route?.params?.returnScreen;
+        const returnParams = route?.params?.returnParams;
+        const action = route?.params?.action;
+
+        if (!isComplete) {
+          navigation.reset({
+            index: 0,
+            routes: [{
+              name: 'CompleteProfile',
+              params: {
+                phone: targetPhone,
+                name: returnedName || explicitName || null,
+                email: returnedEmail || null,
+                returnScreen,
+                returnParams,
+                action,
+              },
+            }],
+          });
+        } else {
+          await syncSavedGuestAddressIfNeeded().catch(() => {});
+          navigateToPostAuthScreen(navigation, returnScreen, returnParams);
+        }
         return;
       }
 
-      const digit = text.replace(/\D/g, '').slice(0, 1);
-      const next = [...digits];
-      next[index] = digit;
-      setDigits(next);
+      // 2. If an active Firebase Confirmation Result is waiting (Web SDK), confirm & sync
+      if (getActiveConfirmationResult()) {
+        const syncResult = await verifyFirebasePhoneOtp(code, {
+          phone: targetPhone,
+          name: explicitName,
+          email: route?.params?.email || payload?.email,
+          companyName: payload?.companyName,
+          businessType: payload?.businessType,
+          gstNumber: payload?.gstNumber,
+          panNumber: payload?.panNumber,
+          role: 'BUYER',
+        });
 
-      if (digit && index < OTP_LENGTH - 1) {
-        setFocusedIndex(index + 1);
-        inputRefs.current[index + 1]?.focus();
-      }
-      if (digit && index === OTP_LENGTH - 1) {
-        inputRefs.current[index]?.blur();
-        triggerVerify(next);
-      }
-    },
-    [digits, triggerVerify]
-  );
-
-  const handleKeyPress = useCallback(
-    (e: any, index: number) => {
-      if (e.nativeEvent.key === 'Backspace') {
-        setError('');
-        const next = [...digits];
-        if (next[index]) {
-          next[index] = '';
-          setDigits(next);
-        } else if (index > 0) {
-          next[index - 1] = '';
-          setDigits(next);
-          setFocusedIndex(index - 1);
-          inputRefs.current[index - 1]?.focus();
+        if (explicitName) {
+          authStore.saveRegisteredUserName(targetPhone, explicitName);
         }
-      }
-    },
-    [digits]
-  );
+        authStore.markPhoneRegistered(targetPhone);
 
-  const handleResend = async () => {
-    if (countdown > 0) return;
-    setDigits(Array(OTP_LENGTH).fill(''));
-    setError('');
-    setSuccessMsg('');
-    setFocusedIndex(0);
-    setCountdown(RESEND_SECONDS);
-    setTimeout(() => inputRefs.current[0]?.focus(), 100);
+        // Post-login guest cart sync
+        try {
+          const guestItems = selectCartItems(store.getState());
+          const currentStoreId = (store.getState().cart as any)?.storeId;
+          if (Array.isArray(guestItems) && guestItems.length > 0) {
+            const syncPayload = guestItems.map((item: any) => ({
+              productId: item.productId,
+              quantity: item.quantity || 1,
+            }));
+            const mergedCart = await cartApi.syncGuestCart(syncPayload, currentStoreId);
+            if (mergedCart) store.dispatch(setServerCart(mergedCart));
+          } else {
+            const serverCart = await cartApi.getCart();
+            if (serverCart) store.dispatch(setServerCart(serverCart));
+          }
+        } catch {
+          // Non-blocking: cart sync failure should not prevent login
+        }
+
+        // Execute pending Add to Cart action if user was prompted to login/register from Add to Cart
+        if (cartAuthGuard.hasPendingAction()) {
+          try {
+            await cartAuthGuard.executePendingAction(store.dispatch);
+          } catch (pendingErr) {
+            console.warn('[OTPScreen] Pending cart action execution error:', pendingErr);
+          }
+        }
+
+        setIsLoading(false);
+
+        // Step 6: Frontend inspects the response:
+        // - If "name" is null: show Profile Completion screen (email is optional).
+        // - If all required details exist: navigate to Home/Dashboard.
+        const returnedName = syncResult?.syncUser?.name;
+        const returnedEmail = syncResult?.syncUser?.email;
+        const isNameComplete = Boolean(
+          returnedName &&
+          !isGenericName(returnedName) &&
+          returnedName.trim().length > 0
+        );
+        const isComplete =
+          isNameComplete &&
+          syncResult?.syncUser?.profileComplete !== false &&
+          (syncResult?.syncUser as any)?.isProfileComplete !== false;
+
+        const returnScreen = route?.params?.returnScreen;
+        const returnParams = route?.params?.returnParams;
+        const action = route?.params?.action;
+
+        if (!isComplete) {
+          navigation.reset({
+            index: 0,
+            routes: [{
+              name: 'CompleteProfile',
+              params: {
+                phone: targetPhone,
+                name: returnedName || explicitName || null,
+                email: returnedEmail || null,
+                returnScreen,
+                returnParams,
+                action,
+              },
+            }],
+          });
+        } else {
+          await syncSavedGuestAddressIfNeeded().catch(() => {});
+          navigateToPostAuthScreen(navigation, returnScreen, returnParams);
+        }
+        return;
+      }
+
+      // 3. No active real SMS verification session -> Strictly reject dummy bypass (e.g. 123456)
+      throw new Error(
+        'No active verification session found. Please tap Resend to receive a verification code on your mobile.'
+      );
+    } catch (err: any) {
+      setIsLoading(false);
+      let errorMsg =
+        err?.response?.data?.error?.message ||
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Invalid verification code. Please check your SMS and try again.';
+
+      if (
+        errorMsg.includes('INVALID_CODE') ||
+        errorMsg.includes('auth/invalid-verification-code') ||
+        err?.code === 'auth/invalid-verification-code' ||
+        errorMsg.includes('INVALID_OTP')
+      ) {
+        errorMsg = 'Invalid verification code. Please enter the valid code sent to your mobile.';
+      } else if (
+        errorMsg.includes('SESSION_EXPIRED') ||
+        errorMsg.includes('auth/code-expired') ||
+        err?.code === 'auth/code-expired'
+      ) {
+        errorMsg = 'Verification code has expired. Please tap Resend to receive a new code.';
+      }
+
+      setOtpError(errorMsg);
+      triggerShake();
+    }
   };
 
-  const isComplete = digits.join('').length === OTP_LENGTH;
+  const handleChangePhone = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Login');
+    }
+  };
+
+  const formatTimer = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const remaining = sec % 60;
+    return `${mins < 10 ? '0' : ''}${mins}:${remaining < 10 ? '0' : ''}${remaining}`;
+  };
+
+  const topPad = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 20);
 
   return (
-    <View style={[styles.root, { backgroundColor: isDark ? '#0A0F1E' : '#F4F6FB' }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#152238" />
-      <LinearGradient colors={['#152238', '#1A3050']} style={styles.topStrip} />
+    <View style={styles.screenRoot}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" translucent />
+
+      {/* Top Header Navigation */}
+      <View style={[styles.topNavBar, { paddingTop: topPad + 4 }]}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={22} color="#0F172A" />
+        </TouchableOpacity>
+        <Text style={styles.navTitle}>Verification</Text>
+        <View style={{ width: 40 }} />
+      </View>
 
       <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoid}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          ref={scrollViewRef}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingBottom: Math.max(insets.bottom, 24) + (isKeyboardOpen ? 140 : 24),
+            },
+          ]}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
+          bounces={true}
+          overScrollMode="always"
         >
-          <View
-            style={[
-              styles.card,
-              {
-                backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                borderColor: isDark ? '#2D3748' : '#E8EDF5',
-              },
-            ]}
-          >
-            {/* Back */}
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={styles.backBtn}
-              disabled={isVerifying}
-            >
-              <Ionicons name="arrow-back" size={20} color={isDark ? '#F1F5F9' : '#152238'} />
-              <Text style={[styles.backText, { color: isDark ? '#F1F5F9' : '#152238' }]}>Back</Text>
-            </TouchableOpacity>
-
-            {/* Header */}
-            <View style={styles.header}>
-              <View style={[styles.iconCircle, { backgroundColor: 'rgba(253, 185, 19, 0.12)' }]}>
-                <Ionicons name="shield-checkmark" size={28} color="#FDB913" />
-              </View>
-              <Text style={[styles.title, { color: isDark ? '#F1F5F9' : '#152238' }]}>
-                Verify Your Number
-              </Text>
-              <Text style={[styles.subtitle, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                OTP sent to
-              </Text>
-              <Text style={[styles.phone, { color: isDark ? '#FDB913' : '#152238' }]}>
-                {maskPhone(phone)}
-              </Text>
+          {/* Central Clean Card */}
+          <View style={styles.cleanCard}>
+            
+            {/* Header Icon */}
+            <View style={styles.iconCircle}>
+              <Ionicons name="shield-checkmark" size={28} color="#0038A8" />
             </View>
 
-            {/* Dev Banner */}
-            {AUTH_CONFIG.developmentMode && (
-              <View style={styles.devBanner}>
-                <Ionicons name="construct" size={13} color="#B45309" />
-                <Text style={styles.devText}>
-                  Development OTP:{' '}
-                  <Text style={styles.devOtp}>{AUTH_CONFIG.developmentOtp}</Text>
-                </Text>
+            {/* Title & Subtitle */}
+            <Text style={styles.headingTitle}>Verify Phone Number</Text>
+            <Text style={styles.subText}>
+              Please enter the 6-digit verification code sent to
+            </Text>
+
+            {/* Masked Phone Pill with Change Button */}
+            <View style={styles.phoneCapsule}>
+              <Ionicons name="call" size={14} color="#0038A8" style={{ marginRight: 6 }} />
+              <Text style={styles.phoneText}>{maskedPhone}</Text>
+              <TouchableOpacity onPress={handleChangePhone} activeOpacity={0.7} style={styles.changeLink}>
+                <Text style={styles.changeLinkText}>Change</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* 6 Digit Input Boxes */}
+            <Animated.View style={[styles.otpRow, { transform: [{ translateX: shakeAnim }] }]}>
+              {digits.map((digit, idx) => {
+                const isFilled = Boolean(digit);
+                return (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.otpBox,
+                      isFilled && styles.otpBoxFilled,
+                      Boolean(otpError) && styles.otpBoxError,
+                    ]}
+                  >
+                    <TextInput
+                      ref={(ref) => { inputRefs.current[idx] = ref; }}
+                      style={styles.otpInput}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      value={digit}
+                      onChangeText={(text) => handleDigitChange(text, idx)}
+                      onKeyPress={(e) => handleKeyPress(e, idx)}
+                      selectTextOnFocus
+                      editable={!isLoading}
+                    />
+                  </View>
+                );
+              })}
+            </Animated.View>
+
+            {/* Error Message */}
+            {Boolean(otpError) && (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle" size={15} color="#EF4444" />
+                <Text style={styles.errorText}>{otpError}</Text>
               </View>
             )}
 
-            {/* OTP Boxes */}
-            <View style={styles.otpRow}>
-              {digits.map((digit, index) => {
-                const isFoc = focusedIndex === index;
-                return (
-                  <TextInput
-                    key={index}
-                    ref={(r) => { inputRefs.current[index] = r; }}
-                    value={digit}
-                    onChangeText={(t) => handleChangeText(t, index)}
-                    onKeyPress={(e) => handleKeyPress(e, index)}
-                    onFocus={() => setFocusedIndex(index)}
-                    keyboardType="number-pad"
-                    maxLength={1}
-                    selectTextOnFocus
-                    caretHidden
-                    style={[
-                      styles.otpBox,
-                      {
-                        backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
-                        color: isDark ? '#F1F5F9' : '#152238',
-                        borderColor: error
-                          ? '#EF4444'
-                          : successMsg
-                          ? '#10B981'
-                          : isFoc
-                          ? '#FDB913'
-                          : digit
-                          ? '#64748B'
-                          : isDark
-                          ? '#334155'
-                          : '#DDE3EE',
-                        borderWidth: isFoc ? 2.5 : 1.5,
-                      },
-                    ]}
-                  />
-                );
-              })}
-            </View>
-
-            {/* Status Messages */}
-            {error ? (
-              <View style={styles.errorBanner}>
-                <Ionicons name="alert-circle" size={15} color="#EF4444" />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            ) : successMsg ? (
-              <View style={styles.successBanner}>
-                <Ionicons name="checkmark-circle" size={15} color="#10B981" />
-                <Text style={styles.successText}>{successMsg}</Text>
-              </View>
-            ) : null}
-
-            {/* Timer / Resend */}
-            <View style={styles.resendSection}>
-              {countdown > 0 ? (
-                <Text style={[styles.countdownText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                  Resend OTP in{' '}
-                  <Text style={{ fontFamily: 'Poppins_600SemiBold', color: '#FDB913' }}>
-                    {countdown}s
-                  </Text>
+            {/* Resend Section */}
+            <View style={styles.resendRow}>
+              <Text style={styles.resendText}>Didn't receive code? </Text>
+              {timerSeconds > 0 ? (
+                <Text style={styles.timerText}>
+                  Resend in <Text style={styles.timerBold}>{formatTimer(timerSeconds)}</Text>
                 </Text>
               ) : (
-                <TouchableOpacity onPress={handleResend} style={styles.resendBtn}>
-                  <Ionicons name="refresh" size={14} color="#FDB913" />
-                  <Text style={styles.resendText}>Resend OTP</Text>
+                <TouchableOpacity onPress={handleResendOtp} activeOpacity={0.75}>
+                  <Text style={styles.resendBtnText}>Resend OTP</Text>
                 </TouchableOpacity>
               )}
             </View>
 
-            {/* Verify Button */}
-            <Button
-              title={isVerifying ? 'Verifying...' : 'Verify OTP'}
-              onPress={() => triggerVerify(digits)}
-              isLoading={isVerifying}
-              disabled={isVerifying || !isComplete}
-              size="lg"
-              variant="primary"
-            />
+            {/* Primary Action Button */}
+            <TouchableOpacity
+              onPress={() => verifyOtp(digits.join(''))}
+              disabled={isLoading || digits.join('').length < 6}
+              activeOpacity={0.88}
+              style={[
+                styles.primaryBtn,
+                (isLoading || digits.join('').length < 6) && styles.primaryBtnDisabled,
+              ]}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.primaryBtnText}>Verify & Continue</Text>
+                  <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
+                </>
+              )}
+            </TouchableOpacity>
+
+            {/* Security Footnote */}
+            <View style={styles.securityRow}>
+              <Ionicons name="lock-closed-outline" size={13} color="#94A3B8" />
+              <Text style={styles.securityText}>Secured by 256-bit encryption</Text>
+            </View>
+
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {recaptchaVisible && (
+        <FirebaseRecaptchaModal
+          visible={recaptchaVisible}
+          phoneNumber={route?.params?.fullPhone || `${countryDial}${rawPhone.replace(/[^0-9]/g, '')}`}
+          onSuccess={handleRecaptchaSuccess}
+          onError={handleRecaptchaError}
+          onClose={() => {
+            setIsLoading(false);
+            setRecaptchaVisible(false);
+          }}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  flex: { flex: 1 },
-  topStrip: { height: 6, width: '100%' },
-  scrollContent: {
-    flexGrow: 1,
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 32,
+  screenRoot: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
   },
-  card: {
-    width: '100%',
-    maxWidth: 440,
-    borderRadius: 20,
-    paddingHorizontal: 24,
-    paddingVertical: 28,
-    borderWidth: 1,
-    ...Platform.select({
-      ios: { shadowColor: '#0F172A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.07, shadowRadius: 16 },
-      android: { elevation: 3 },
-    }),
+  keyboardAvoid: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+
+  // Top Navbar
+  topNavBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
   backBtn: {
-    flexDirection: 'row',
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
     alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    marginBottom: 24,
-  },
-  backText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  iconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
     justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(253, 185, 19, 0.2)',
   },
-  title: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 22,
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  phone: {
-    fontFamily: 'Poppins_600SemiBold',
+  navTitle: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
     fontSize: 16,
-    marginTop: 2,
-    textAlign: 'center',
+    color: '#0F172A',
   },
-  devBanner: {
+
+  // Central Clean Card
+  cleanCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+
+  // Icon Circle
+  iconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FFFBEB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#FEF3C7',
+  },
+
+  // Text
+  headingTitle: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    fontSize: 18,
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  subText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 17,
+    marginBottom: 8,
+  },
+
+  // Phone Capsule
+  phoneCapsule: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FFFBEB',
-    borderColor: '#F59E0B',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderRadius: 10,
+    borderColor: '#E2E8F0',
+    borderRadius: 6,
+    paddingVertical: 5,
     paddingHorizontal: 12,
-    paddingVertical: 10,
     marginBottom: 20,
   },
-  devText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
-    color: '#78350F',
+  phoneText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '600',
+    fontSize: 12.5,
+    color: '#1E293B',
+    marginRight: 8,
   },
-  devOtp: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 14,
+  changeLink: {
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+  },
+  changeLinkText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '600',
+    fontSize: 12,
     color: '#B45309',
-    letterSpacing: 2,
+    textDecorationLine: 'underline',
   },
+
+  // 6 OTP Digit Boxes
   otpRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     gap: 8,
-    marginBottom: 20,
+    marginBottom: 14,
+    width: '100%',
   },
   otpBox: {
-    flex: 1,
-    height: 58,
-    borderRadius: 14,
-    textAlign: 'center',
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 22,
-  },
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(239,68,68,0.08)',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
-    marginBottom: 16,
-  },
-  errorText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
-    color: '#EF4444',
-    flex: 1,
-  },
-  successBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16,185,129,0.08)',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
-    marginBottom: 16,
-  },
-  successText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
-    color: '#10B981',
-    flex: 1,
-  },
-  resendSection: {
+    width: 42,
+    height: 48,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FAFAFA',
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 36,
-    marginBottom: 20,
   },
-  countdownText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
+  otpBoxFilled: {
+    borderColor: '#FDB913',
+    backgroundColor: '#FFFFFF',
   },
-  resendBtn: {
+  otpBoxError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
+  otpInput: {
+    width: '100%',
+    height: '100%',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    fontSize: 18,
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+
+  // Error Banner
+  errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 6,
     paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
+    gap: 6,
+    marginBottom: 12,
+  },
+  errorText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 12,
+    color: '#EF4444',
+  },
+
+  // Resend Row
+  resendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
   },
   resendText: {
-    fontFamily: 'Poppins_600SemiBold',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 12.5,
+    color: '#64748B',
+  },
+  timerText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 12.5,
+    color: '#64748B',
+  },
+  timerBold: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  resendBtnText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    fontSize: 12.5,
+    color: '#E31E24',
+  },
+
+  // Primary Button
+  primaryBtn: {
+    width: '100%',
+    height: 46,
+    borderRadius: 8,
+    backgroundColor: '#E31E24',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  primaryBtnDisabled: {
+    backgroundColor: '#CBD5E1',
+  },
+  primaryBtnText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
     fontSize: 14,
-    color: '#FDB913',
+    color: '#FFFFFF',
+  },
+
+  // Security Footnote
+  securityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  securityText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 11,
+    color: '#94A3B8',
   },
 });
 
-export default OTPScreen;

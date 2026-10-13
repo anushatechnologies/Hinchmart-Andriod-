@@ -12,7 +12,7 @@ interface ThemeState {
 }
 
 const initialState: ThemeState = {
-  mode: 'system',
+  mode: 'auto',
   language: 'en',
   currency: 'INR',
   measurementUnit: 'metric',

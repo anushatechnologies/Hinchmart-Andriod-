@@ -1,153 +1,440 @@
 /**
- * HINCH MART — Notifications, B2B Chat, FAQ, and Industry News Screens
- * Fully interactive with deep link navigation to RFQs, Orders, and Support channels
+ * HINCH MART — Notifications, B2B Chat & FAQ Center (IBO Home Building Megastore Theme)
+ * - NotificationsScreen: Filter pills (All, Orders, Quotations, Wallet), mark-all-as-read, unread dots, navigation routing
+ * - ChatListScreen: Supplier B2B messages list, verified badge, avatar initials, unread previews
+ * - FAQScreen: Expandable accordion FAQs with search filter and quick support contact
+ * - NewsScreen re-export
  */
-import React, { useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+  StatusBar,
+  ScrollView,
+  TextInput,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../theme';
-import { Screen, Header } from '../../../components/layout/Screen';
-import { Card } from '../../../components/ui/Card';
-import { Badge } from '../../../components/ui/Badge';
+import { notificationsApi } from '../../../services/api/notifications.api';
+import { chatApi } from '../../../services/api/chat.api';
 
-const DEMO_NOTIFICATIONS = [
-  {
-    id: 'n1',
-    title: 'Quotation Received!',
-    body: 'Global Metals Co submitted a quote for RFQ #RFQ-88210 ($42,000).',
-    time: '10m ago',
-    unread: true,
-    targetScreen: 'RFQDetail',
-    targetParams: { rfqId: 'rfq1' },
-    icon: 'document-text',
-    iconColor: '#F59E0B',
-  },
-  {
-    id: 'n2',
-    title: 'Order Dispatched',
-    body: 'Order #HM-994821 has been shipped via Express Freight Logistics.',
-    time: '2h ago',
-    unread: false,
-    targetScreen: 'OrderDetail',
-    targetParams: { orderId: 'o1' },
-    icon: 'cube',
-    iconColor: '#3B82F6',
-  },
-  {
-    id: 'n3',
-    title: 'Equipment Rental Reserved',
-    body: 'CAT 320 Hydraulic Excavator availability confirmed for Business Bay Site.',
-    time: '1d ago',
-    unread: false,
-    targetScreen: 'RentalList',
-    targetParams: {},
-    icon: 'construct',
-    iconColor: '#10B981',
-  },
-];
+interface NotificationItem {
+  id: string;
+  title: string;
+  body: string;
+  time: string;
+  type: 'order' | 'rfq' | 'wallet' | 'promo';
+  read: boolean;
+  orderId?: string;
+  rfqId?: string;
+}
 
+const FILTER_TABS = ['All', 'Orders', 'Quotations', 'Wallet'];
+
+/* ================================================================== */
+/* 1. NOTIFICATIONS SCREEN                                            */
+/* ================================================================== */
 export function NotificationsScreen({ navigation }: any) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState('All');
+
+  useEffect(() => {
+    let isMounted = true;
+    notificationsApi
+      .getNotifications()
+      .then((items) => {
+        if (!isMounted) return;
+        const mapped: NotificationItem[] = (items || []).map((n) => ({
+          id: String(n.id),
+          title: n.title || 'Order Update',
+          body: n.body || '',
+          time: n.createdAt
+            ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : 'Recent',
+          type: (n.type as any) || 'order',
+          read: Boolean(n.read || n.isRead),
+          orderId: n.orderId,
+          rfqId: n.rfqId,
+        }));
+        setNotifications(mapped);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 20
+  );
+
+  const handleMarkAllAsRead = () => {
+    notificationsApi.markAllAsRead();
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  };
+
+  const handleNotificationPress = (item: NotificationItem) => {
+    notificationsApi.markAsRead(item.id);
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === item.id ? { ...n, read: true } : n))
+    );
+
+    if (item.type === 'order') {
+      if (item.orderId) {
+        navigation.navigate('OrderTracking', {
+          orderId: item.orderId,
+        });
+      } else {
+        navigation.navigate('OrderHistory');
+      }
+    } else if (item.type === 'rfq') {
+      if (item.rfqId) {
+        navigation.navigate('RFQDetail', { rfqId: item.rfqId });
+      } else {
+        navigation.navigate('RFQList');
+      }
+    }
+  };
+
+  const filteredData = notifications.filter((n) => {
+    if (activeFilter === 'All') return true;
+    if (activeFilter === 'Orders') return n.type === 'order';
+    if (activeFilter === 'Quotations') return n.type === 'rfq';
+    if (activeFilter === 'Wallet') return n.type === 'wallet';
+    return true;
+  });
+
+  const getNotifIcon = (type: NotificationItem['type']) => {
+    switch (type) {
+      case 'order':
+        return { name: 'cube-outline' as const, bg: '#FEF3C7', color: '#D97706' };
+      case 'rfq':
+        return { name: 'document-text-outline' as const, bg: '#DBEAFE', color: '#2563EB' };
+      case 'wallet':
+        return { name: 'wallet-outline' as const, bg: '#DCFCE7', color: '#16A34A' };
+      case 'promo':
+        return { name: 'pricetag-outline' as const, bg: '#F3E8FF', color: '#9333EA' };
+      default:
+        return { name: 'notifications-outline' as const, bg: '#F1F5F9', color: '#64748B' };
+    }
+  };
 
   return (
-    <Screen scrollable={false}>
-      <Header title="Notifications" showBack onBackPress={() => navigation.goBack()} />
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.colors.surface}
+        translucent
+      />
 
-      <FlatList
-        data={DEMO_NOTIFICATIONS}
-        contentContainerStyle={{ padding: 16 }}
-        renderItem={({ item }) => (
+      {/* Top Header */}
+      <View
+        style={[
+          styles.topHeader,
+          {
+            paddingTop: topPadding + 6,
+            backgroundColor: theme.colors.surface,
+            borderBottomColor: theme.colors.border,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('HomeTab'))}
+          style={styles.headerIconBtn}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={24} color={theme.colors.textPrimary} />
+        </TouchableOpacity>
+
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Notifications</Text>
+          <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
+            {unreadCount > 0 ? `${unreadCount} unread alert${unreadCount > 1 ? 's' : ''}` : 'All caught up'}
+          </Text>
+        </View>
+
+        {unreadCount > 0 && (
           <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => {
-              if (item.targetScreen) {
-                navigation.navigate(item.targetScreen, item.targetParams);
-              }
-            }}
+            onPress={handleMarkAllAsRead}
+            style={[styles.readAllBtn, { backgroundColor: theme.colors.primaryLight }]}
+            activeOpacity={0.7}
           >
-            <Card
-              variant={item.unread ? 'filled' : 'outlined'}
-              style={[
-                styles.cardMargin,
-                item.unread && { backgroundColor: `${theme.colors.primary}12`, borderColor: theme.colors.primary },
-              ]}
-            >
-              <View style={styles.rowBetween}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                  <View style={[styles.notifIconWrap, { backgroundColor: `${item.iconColor}18` }]}>
-                    <Ionicons name={item.icon as any} size={16} color={item.iconColor} />
-                  </View>
-                  <Text style={[styles.notifTitle, { color: theme.colors.navy }]}>{item.title}</Text>
-                </View>
-                <Text style={{ fontSize: 11, color: theme.colors.textTertiary }}>{item.time}</Text>
-              </View>
-              <Text style={[styles.notifBody, { color: theme.colors.textSecondary, marginLeft: 36 }]}>
-                {item.body}
-              </Text>
-            </Card>
+            <Ionicons name="checkmark-done" size={15} color={theme.colors.primary} />
+            <Text style={[styles.readAllText, { color: theme.colors.primary }]}>Mark read</Text>
           </TouchableOpacity>
         )}
+      </View>
+
+      {/* Filter Tabs Bar */}
+      <View
+        style={[
+          styles.filterTabsWrapper,
+          {
+            backgroundColor: theme.colors.surface,
+            borderBottomColor: theme.colors.border,
+          },
+        ]}
+      >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterTabsContent}>
+          {FILTER_TABS.map((tab) => {
+            const active = tab === activeFilter;
+            return (
+              <TouchableOpacity
+                key={tab}
+                onPress={() => setActiveFilter(tab)}
+                activeOpacity={0.75}
+                style={[
+                  styles.filterPill,
+                  {
+                    backgroundColor: active ? theme.colors.primary : theme.colors.surfaceVariant,
+                    borderColor: active ? theme.colors.primary : theme.colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.filterPillText,
+                    {
+                      color: active ? '#FFFFFF' : theme.colors.textSecondary,
+                      fontWeight: active ? '700' : '500',
+                    },
+                  ]}
+                >
+                  {tab}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* Notifications List */}
+      <FlatList
+        data={filteredData}
         keyExtractor={(item) => item.id}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: Math.max(insets.bottom, 20) + 30 },
+        ]}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <View style={[styles.emptyIconCircle, { backgroundColor: theme.colors.surfaceVariant }]}>
+              <Ionicons name="notifications-off-outline" size={42} color={theme.colors.textTertiary} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: theme.colors.textPrimary }]}>No Notifications</Text>
+            <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
+              You're all caught up with your orders, quotations, and account updates.
+            </Text>
+          </View>
+        }
+        renderItem={({ item }) => {
+          const iconInfo = getNotifIcon(item.type);
+          return (
+            <TouchableOpacity
+              onPress={() => handleNotificationPress(item)}
+              activeOpacity={0.85}
+              style={[
+                styles.notifCard,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: !item.read ? theme.colors.primary : theme.colors.border,
+                  borderLeftWidth: !item.read ? 4 : 1,
+                  borderLeftColor: !item.read ? theme.colors.primary : theme.colors.border,
+                },
+              ]}
+            >
+              {/* Card Header Row */}
+              <View style={styles.cardHeaderRow}>
+                <View style={[styles.iconBox, { backgroundColor: iconInfo.bg }]}>
+                  <Ionicons name={iconInfo.name} size={17} color={iconInfo.color} />
+                </View>
+
+                <View style={styles.titleInfo}>
+                  <Text numberOfLines={1} style={[styles.notifTitle, { color: theme.colors.textPrimary }]}>
+                    {item.title}
+                  </Text>
+                </View>
+
+                <Text style={[styles.timeText, { color: theme.colors.textTertiary }]}>{item.time}</Text>
+
+                {!item.read && <View style={[styles.unreadDot, { backgroundColor: theme.colors.primary }]} />}
+              </View>
+
+              {/* Body Content */}
+              <Text style={[styles.notifBody, { color: theme.colors.textSecondary }]}>{item.body}</Text>
+            </TouchableOpacity>
+          );
+        }}
       />
-    </Screen>
+    </View>
   );
 }
 
+/* ================================================================== */
+/* 2. CHAT LIST SCREEN                                                */
+/* ================================================================== */
 export function ChatListScreen({ navigation }: any) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    chatApi
+      .listConversations()
+      .then((list) => {
+        if (isMounted && Array.isArray(list) && list.length > 0) {
+          setConversations(list);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 20
+  );
 
   return (
-    <Screen scrollable={false}>
-      <Header title="B2B Messages" showBack onBackPress={() => navigation.goBack()} />
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.colors.surface}
+        translucent
+      />
 
-      <View style={{ padding: 16 }}>
+      <View
+        style={[
+          styles.topHeader,
+          {
+            paddingTop: topPadding + 6,
+            backgroundColor: theme.colors.surface,
+            borderBottomColor: theme.colors.border,
+          },
+        ]}
+      >
         <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => navigation.navigate('RFQDetail', { rfqId: 'rfq1' })}
+          onPress={() => navigation.goBack()}
+          style={styles.headerIconBtn}
+          activeOpacity={0.7}
         >
-          <Card variant="outlined" style={{ padding: 16, borderRadius: 16 }}>
-            <View style={styles.rowBetween}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Ionicons name="arrow-back" size={24} color={theme.colors.textPrimary} />
+        </TouchableOpacity>
+
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>
+            Supplier Messages
+          </Text>
+          <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
+            B2B Inquiries & Verified Sellers
+          </Text>
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+        {conversations.length > 0 ? (
+          conversations.map((conv, idx) => (
+            <TouchableOpacity
+              key={conv.conversationId || conv.id || idx}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('RFQDetail', { rfqId: conv.rfqId || 'rfq1' })}
+              style={[
+                styles.chatCard,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.border,
+                },
+              ]}
+            >
+              <View style={styles.chatRow}>
                 <View style={[styles.avatarCircle, { backgroundColor: theme.colors.navy }]}>
-                  <Text style={{ color: '#FFF', fontFamily: 'Poppins_700Bold', fontSize: 14 }}>GM</Text>
-                </View>
-                <View>
-                  <Text style={{ fontFamily: 'Poppins_600SemiBold', fontSize: 15, color: theme.colors.textPrimary }}>
-                    Global Metals Co (Vendor)
+                  <Text style={styles.avatarInitials}>
+                    {(conv.participantName || conv.vendorName || 'HM').slice(0, 2).toUpperCase()}
                   </Text>
-                  <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: theme.colors.success }}>
-                    ✓ Verified Gold Supplier
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={[styles.chatName, { color: theme.colors.textPrimary }]}>
+                      {conv.participantName || conv.vendorName || 'Verified Supplier'}
+                    </Text>
+                    <Text style={[styles.chatTime, { color: theme.colors.textTertiary }]}>
+                      {conv.lastMessageAt
+                        ? new Date(conv.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        : 'Recent'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.verifiedTag, { color: theme.colors.success }]}>
+                    ✓ Verified Supplier
+                  </Text>
+                  <Text numberOfLines={2} style={[styles.lastMsgText, { color: theme.colors.textSecondary }]}>
+                    {conv.lastMessage || 'Click to open B2B message thread'}
                   </Text>
                 </View>
               </View>
-              <Text style={{ fontSize: 11, color: theme.colors.textTertiary }}>12:40 PM</Text>
-            </View>
-            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: theme.colors.textSecondary, marginTop: 10 }}>
-              "Yes, we can dispatch 500 Tons of Steel Rebar by Thursday to your Business Bay site."
+            </TouchableOpacity>
+          ))
+        ) : (
+          <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 48, paddingHorizontal: 24 }}>
+            <Ionicons name="chatbubbles-outline" size={48} color={theme.colors.textTertiary} />
+            <Text style={{ fontFamily: 'Poppins_600SemiBold', fontSize: 16, color: theme.colors.textPrimary, marginTop: 12 }}>
+              No Conversations Yet
             </Text>
-          </Card>
-        </TouchableOpacity>
-      </View>
-    </Screen>
+            <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: theme.colors.textSecondary, textAlign: 'center', marginTop: 6 }}>
+              Messages with vendors and customer support will appear here once started.
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
+/* ================================================================== */
+/* 3. FAQ SCREEN                                                      */
+/* ================================================================== */
 export function FAQScreen({ navigation }: any) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const FAQ_ITEMS = [
     {
       q: 'How do RFQ bulk quotations work?',
-      a: 'Submit your material specifications or bill of quantities (BOQ). Verified international suppliers submit competitive bids within 24 hours. You can compare quotes and proceed with Escrow payment protection.',
+      a: 'Submit your material specifications or bill of quantities (BOQ). Verified domestic manufacturers submit competitive bids within 24 hours. You can compare quotes and proceed with Escrow payment protection.',
     },
     {
-      q: 'What payment methods are supported for international orders?',
-      a: 'We support Letters of Credit (L/C), Escrow Wire Transfers, Corporate Credit Cards, and HINCH MART Business Wallet balance.',
+      q: 'What payment methods are supported for bulk purchases?',
+      a: 'We support Letters of Credit (L/C), Escrow Bank Wire Transfers, NEFT/RTGS, Corporate Credit Cards, and HINCH MART Business Wallet balance.',
     },
     {
-      q: 'How is heavy equipment rental delivered?',
-      a: 'Equipment rentals include direct site mobilization, certified machine operators, safety inspections, and on-site logistics setup.',
+      q: 'How does 24-Hour Express delivery operate in Hyderabad?',
+      a: 'For serviceable pin codes across Hyderabad, materials marked with the 24-Hour badge are dispatched directly from our regional fulfillment centers within 24 hours of confirmation.',
+    },
+    {
+      q: 'How is heavy equipment rental handled?',
+      a: 'Equipment rentals include direct site mobilization, certified machine operators, mandatory safety inspections, and complete on-site logistics setup.',
     },
     {
       q: 'Can I request customized material specifications?',
@@ -155,112 +442,382 @@ export function FAQScreen({ navigation }: any) {
     },
   ];
 
+  const filteredFaqs = FAQ_ITEMS.filter(
+    (item) =>
+      item.q.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.a.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 20
+  );
+
   return (
-    <Screen scrollable>
-      <Header title="Help Center & FAQ" showBack onBackPress={() => navigation.goBack()} />
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={theme.colors.surface}
+        translucent
+      />
 
-      <View style={{ padding: 16 }}>
-        <Text style={{ fontFamily: 'Poppins_700Bold', fontSize: 20, marginBottom: 16, color: theme.colors.navy }}>
-          Frequently Asked Questions
-        </Text>
+      <View
+        style={[
+          styles.topHeader,
+          {
+            paddingTop: topPadding + 6,
+            backgroundColor: theme.colors.surface,
+            borderBottomColor: theme.colors.border,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.headerIconBtn}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={24} color={theme.colors.textPrimary} />
+        </TouchableOpacity>
 
-        {FAQ_ITEMS.map((item, idx) => {
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>Help & FAQs</Text>
+          <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
+            Find quick answers to common questions
+          </Text>
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+        {/* Search Input Box */}
+        <View
+          style={[
+            styles.faqSearchBox,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.border,
+            },
+          ]}
+        >
+          <Ionicons name="search-outline" size={18} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search FAQs (e.g. RFQ, delivery, payment)..."
+            placeholderTextColor={theme.colors.textTertiary}
+            style={[styles.faqSearchInput, { color: theme.colors.textPrimary }]}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color={theme.colors.textTertiary} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* FAQs Accordion */}
+        {filteredFaqs.map((item, idx) => {
           const isExpanded = expandedIndex === idx;
           return (
             <TouchableOpacity
               key={idx}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
               onPress={() => setExpandedIndex(isExpanded ? null : idx)}
+              style={[
+                styles.faqCard,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: isExpanded ? theme.colors.primary : theme.colors.border,
+                },
+              ]}
             >
-              <Card variant="outlined" style={{ marginBottom: 12, padding: 14, borderRadius: 14 }}>
-                <View style={styles.rowBetween}>
-                  <Text style={{ fontFamily: 'Poppins_600SemiBold', fontSize: 14, color: theme.colors.textPrimary, flex: 1, paddingRight: 8 }}>
-                    ❓ {item.q}
-                  </Text>
-                  <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={theme.colors.textTertiary} />
-                </View>
-                {isExpanded && (
-                  <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: theme.colors.textSecondary, lineHeight: 19, marginTop: 8 }}>
-                    {item.a}
-                  </Text>
-                )}
-              </Card>
+              <View style={styles.faqHeaderRow}>
+                <Text style={[styles.faqQuestion, { color: theme.colors.textPrimary }]}>
+                  {item.q}
+                </Text>
+                <Ionicons
+                  name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color={isExpanded ? theme.colors.primary : theme.colors.textTertiary}
+                />
+              </View>
+              {isExpanded && (
+                <Text style={[styles.faqAnswer, { color: theme.colors.textSecondary }]}>
+                  {item.a}
+                </Text>
+              )}
             </TouchableOpacity>
           );
         })}
-      </View>
-    </Screen>
+
+        {/* Need More Help Card */}
+        <View
+          style={[
+            styles.helpCard,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.border,
+            },
+          ]}
+        >
+          <Ionicons name="headset-outline" size={24} color={theme.colors.primary} style={{ marginBottom: 8 }} />
+          <Text style={[styles.helpCardTitle, { color: theme.colors.textPrimary }]}>
+            Still have questions?
+          </Text>
+          <Text style={[styles.helpCardSub, { color: theme.colors.textSecondary }]}>
+            Our B2B construction procurement specialists are available 24/7 to assist with your requirements.
+          </Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('HelpSupport')}
+            style={[styles.helpCtaBtn, { backgroundColor: theme.colors.primary }]}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.helpCtaBtnText}>Contact Support Team</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
-export function NewsScreen({ navigation }: any) {
-  const { theme } = useTheme();
+export { NewsScreen } from './NewsScreen';
 
-  return (
-    <Screen scrollable>
-      <Header title="Construction Industry News" showBack onBackPress={() => navigation.goBack()} />
-
-      <View style={{ padding: 16 }}>
-        <Card variant="outlined" style={{ marginBottom: 16, padding: 14, borderRadius: 14 }}>
-          <Text style={{ fontFamily: 'Poppins_700Bold', fontSize: 16, color: theme.colors.navy, marginBottom: 4 }}>
-            📈 Global Steel Prices Surge by 8.5% Amid Demand in Green Infrastructure
-          </Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: theme.colors.textTertiary, marginBottom: 8 }}>
-            Aug 03, 2026 · International Trade Report
-          </Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: theme.colors.textSecondary, lineHeight: 19 }}>
-            Analysis of raw steel billet prices across Middle East and European export hubs indicates strong demand for LEED-certified reinforced rebar...
-          </Text>
-        </Card>
-
-        <Card variant="outlined" style={{ marginBottom: 16, padding: 14, borderRadius: 14 }}>
-          <Text style={{ fontFamily: 'Poppins_700Bold', fontSize: 16, color: theme.colors.navy, marginBottom: 4 }}>
-            🏗️ Smart Logistics: Real-Time Telematics Introduced for Heavy Machinery Fleet
-          </Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: theme.colors.textTertiary, marginBottom: 8 }}>
-            Jul 28, 2026 · Fleet Management Digest
-          </Text>
-          <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: theme.colors.textSecondary, lineHeight: 19 }}>
-            Rental excavators and cranes now feature automated fuel tracking, IoT load monitoring, and site dispatch optimization.
-          </Text>
-        </Card>
-      </View>
-    </Screen>
-  );
-}
-
+/* ================================================================== */
+/* STYLES                                                             */
+/* ================================================================== */
 const styles = StyleSheet.create({
-  cardMargin: {
-    marginBottom: 10,
-    padding: 14,
-    borderRadius: 14,
+  container: {
+    flex: 1,
   },
-  rowBetween: {
+  topHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    gap: 12,
+  },
+  headerIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    fontSize: 17,
+  },
+  headerSubtitle: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 12,
+    marginTop: 1,
+  },
+  readAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  readAllText: {
+    fontWeight: '600',
+    fontSize: 11.5,
+  },
+  filterTabsWrapper: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+  },
+  filterTabsContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  filterPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  filterPillText: {
+    fontSize: 12,
+  },
+  listContent: {
+    padding: 16,
+    gap: 10,
+  },
+  notifCard: {
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  iconBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  titleInfo: {
+    flex: 1,
+    marginRight: 8,
+  },
+  notifTitle: {
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  timeText: {
+    fontSize: 11,
+  },
+  unreadDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginLeft: 6,
+  },
+  notifBody: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    paddingLeft: 38,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 50,
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  emptySubtitle: {
+    fontSize: 12.5,
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 18,
+    maxWidth: 280,
+  },
+  chatCard: {
+    borderRadius: 10,
+    padding: 14,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  chatRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  avatarCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitials: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  chatName: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  chatTime: {
+    fontSize: 11,
+  },
+  verifiedTag: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  lastMsgText: {
+    fontSize: 12.5,
+    lineHeight: 17,
+  },
+  faqSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  faqSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    padding: 0,
+  },
+  faqCard: {
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 8,
+  },
+  faqHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  notifIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    justifyContent: 'center',
+  faqQuestion: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    flex: 1,
+    paddingRight: 8,
+    lineHeight: 18,
+  },
+  faqAnswer: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F3F5',
+  },
+  helpCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 18,
     alignItems: 'center',
+    marginTop: 12,
   },
-  notifTitle: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 14,
+  helpCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
   },
-  notifBody: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 13,
-    marginTop: 4,
+  helpCardSub: {
+    fontSize: 12.5,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 14,
+    maxWidth: 290,
   },
-  avatarCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+  helpCtaBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 6,
+  },
+  helpCtaBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '700',
   },
 });
+
+export default NotificationsScreen;

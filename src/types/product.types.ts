@@ -2,6 +2,113 @@
  * HINCH MART — Product Types
  */
 
+export interface ApiProduct {
+  productId: number | string;
+  subcategoryId: number | string;
+  categoryId?: number | string;
+  title: string;
+  description: string;
+  price: number;
+  mrp?: number;
+  stockQty: number;
+  unit: string;
+  imageUrl: string;
+  images?: string[];
+  slug?: string;
+  sku?: string;
+  brand?: string;
+  moq?: number;
+  is24HourDelivery?: boolean;
+  reviewCount?: number;
+  gstRate?: number;
+  hsnCode?: string;
+  specifications?: Record<string, string>;
+  bulkPricingTiers?: Array<{
+    tierId: number | string;
+    minQty: number;
+    maxQty: number | null;
+    price: number;
+    discountPercentage?: number;
+  }>;
+  vendor?: {
+    vendorId: number | string;
+    companyName: string;
+    city?: string;
+    isVerified?: boolean;
+    rating?: number;
+  };
+  active: boolean;
+  createdAt?: string;
+  // UI helper fields
+  id?: string | number;
+  name?: string;
+  image?: string;
+  rating?: number;
+  reviews?: number;
+  discountPercent?: number;
+  savingsText?: string;
+  comparePrice?: number;
+  verified?: boolean;
+}
+
+export interface ProductImageUploadResponse {
+  data: {
+    imageKey: string;
+    fileUrl: string;
+    imageUrl: string;
+  };
+}
+
+export interface ProductCreateRequest {
+  subcategoryId: number;
+  categoryId?: number;
+  title: string;
+  price: number;
+  stockQty: number;
+  unit: string;
+  imageUrl?: string;
+  images?: string[];
+  active?: boolean;
+  is24HourDelivery?: boolean;
+  slug?: string;
+  sku?: string;
+  brand?: string;
+  description?: string;
+  mrp?: number;
+  moq?: number;
+  rating?: number;
+  reviewCount?: number;
+  gstRate?: number;
+  hsnCode?: string;
+  specifications?: Record<string, string>;
+  bulkPricingTiers?: ApiProduct['bulkPricingTiers'];
+}
+
+export interface ProductUpdateRequest {
+  subcategoryId?: number;
+  categoryId?: number;
+  title?: string;
+  price?: number;
+  stockQty?: number;
+  unit?: string;
+  imageUrl?: string;
+  images?: string[];
+  active?: boolean;
+  is24HourDelivery?: boolean;
+  slug?: string;
+  sku?: string;
+  brand?: string;
+  description?: string;
+  mrp?: number;
+  moq?: number;
+  rating?: number;
+  reviewCount?: number;
+  gstRate?: number;
+  hsnCode?: string;
+  specifications?: Record<string, string>;
+  bulkPricingTiers?: ApiProduct['bulkPricingTiers'];
+}
+
 export interface Category {
   id: string;
   name: string;

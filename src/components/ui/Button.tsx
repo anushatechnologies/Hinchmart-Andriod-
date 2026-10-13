@@ -1,5 +1,6 @@
 /**
- * HINCH MART — Premium Animated Button Component
+ * HINCH MART — Clean Modern Button Component
+ * Standardized 44px height, clean 8px radius, solid colors, crisp spring animation
  */
 import React from 'react';
 import {
@@ -10,6 +11,7 @@ import {
   TextStyle,
   StyleSheet,
   View,
+  Platform,
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -24,7 +26,8 @@ export type ButtonVariant =
   | 'outline'
   | 'ghost'
   | 'danger'
-  | 'navy';
+  | 'navy'
+  | 'success';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export interface ButtonProps {
@@ -58,15 +61,15 @@ export function Button({
   textStyle,
   accessibilityLabel,
 }: ButtonProps) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const scale = useSharedValue(1);
 
   const handlePressIn = () => {
-    scale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+    scale.value = withSpring(0.97, { damping: 18, stiffness: 300 });
   };
 
   const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    scale.value = withSpring(1, { damping: 18, stiffness: 300 });
   };
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -81,36 +84,42 @@ export function Button({
             backgroundColor: theme.colors.primary,
           },
           text: {
-            color: theme.colors.navy,
+            color: '#FFFFFF',
+            fontWeight: '700',
           },
         };
       case 'navy':
         return {
           container: {
-            backgroundColor: theme.colors.navy,
+            backgroundColor: '#1E293B',
           },
           text: {
-            color: theme.colors.surface,
+            color: '#FFFFFF',
+            fontWeight: '600',
           },
         };
       case 'secondary':
         return {
           container: {
-            backgroundColor: theme.colors.surfaceVariant,
+            backgroundColor: isDark ? '#334155' : '#F8F9FA',
+            borderWidth: 1,
+            borderColor: isDark ? '#475569' : '#E2E8F0',
           },
           text: {
-            color: theme.colors.textPrimary,
+            color: isDark ? '#F1F5F9' : '#1E293B',
+            fontWeight: '600',
           },
         };
       case 'outline':
         return {
           container: {
             backgroundColor: 'transparent',
-            borderWidth: 1.5,
-            borderColor: theme.colors.border,
+            borderWidth: 1,
+            borderColor: theme.colors.primary,
           },
           text: {
-            color: theme.colors.textPrimary,
+            color: theme.colors.primary,
+            fontWeight: '600',
           },
         };
       case 'ghost':
@@ -120,15 +129,37 @@ export function Button({
           },
           text: {
             color: theme.colors.primary,
+            fontWeight: '600',
           },
         };
       case 'danger':
         return {
           container: {
-            backgroundColor: theme.colors.danger,
+            backgroundColor: '#EF4444',
           },
           text: {
-            color: theme.colors.onPrimary,
+            color: '#FFFFFF',
+            fontWeight: '600',
+          },
+        };
+      case 'success':
+        return {
+          container: {
+            backgroundColor: '#10B981',
+          },
+          text: {
+            color: '#FFFFFF',
+            fontWeight: '600',
+          },
+        };
+      default:
+        return {
+          container: {
+            backgroundColor: theme.colors.primary,
+          },
+          text: {
+            color: '#FFFFFF',
+            fontWeight: '700',
           },
         };
     }
@@ -139,37 +170,40 @@ export function Button({
       case 'sm':
         return {
           container: {
-            paddingVertical: theme.spacing[2],
-            paddingHorizontal: theme.spacing[4],
-            borderRadius: theme.borderRadius.md,
-            minHeight: 36,
+            paddingVertical: 6,
+            paddingHorizontal: 12,
+            borderRadius: 6,
+            minHeight: 34,
           },
           text: {
-            ...theme.typography.buttonSmall,
+            fontSize: 12,
+            lineHeight: 16,
           },
         };
       case 'md':
         return {
           container: {
-            paddingVertical: theme.spacing[3],
-            paddingHorizontal: theme.spacing[6],
-            borderRadius: theme.borderRadius.lg,
-            minHeight: 48,
+            paddingVertical: 10,
+            paddingHorizontal: 16,
+            borderRadius: 8,
+            minHeight: 44,
           },
           text: {
-            ...theme.typography.buttonMedium,
+            fontSize: 14,
+            lineHeight: 18,
           },
         };
       case 'lg':
         return {
           container: {
-            paddingVertical: theme.spacing[4],
-            paddingHorizontal: theme.spacing[8],
-            borderRadius: theme.borderRadius.xl,
-            minHeight: 56,
+            paddingVertical: 14,
+            paddingHorizontal: 20,
+            borderRadius: 8,
+            minHeight: 50,
           },
           text: {
-            ...theme.typography.buttonLarge,
+            fontSize: 15,
+            lineHeight: 20,
           },
         };
     }
@@ -184,7 +218,7 @@ export function Button({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       disabled={disabled || isLoading}
-      activeOpacity={0.8}
+      activeOpacity={0.85}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
       style={[
@@ -202,7 +236,14 @@ export function Button({
       ) : (
         <View style={styles.contentRow}>
           {iconLeft && <View style={styles.iconLeft}>{iconLeft}</View>}
-          <Text style={[sizeStyles.text, variantStyles.text, textStyle]}>
+          <Text
+            style={[
+              styles.textBase,
+              sizeStyles.text,
+              variantStyles.text,
+              textStyle,
+            ]}
+          >
             {title}
           </Text>
           {iconRight && <View style={styles.iconRight}>{iconRight}</View>}
@@ -229,10 +270,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  textBase: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    textAlign: 'center',
+  },
   iconLeft: {
-    marginRight: 8,
+    marginRight: 6,
   },
   iconRight: {
-    marginLeft: 8,
+    marginLeft: 6,
   },
 });
+
+export function HinchPrimaryButton(props: Omit<ButtonProps, 'variant'>) {
+  return <Button {...props} variant="primary" />;
+}
+
+export function HinchSecondaryButton(props: Omit<ButtonProps, 'variant'>) {
+  return <Button {...props} variant="secondary" />;
+}

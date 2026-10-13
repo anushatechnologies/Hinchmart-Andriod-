@@ -2,25 +2,27 @@
   "expo": {
     "name": "HINCH MART",
     "slug": "hinchmart",
-    "version": "1.0.2",
-    "orientation": "portrait",
+    "version": "1.0.28",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
+    "updates": {
+      "enabled": false,
+      "fallbackToCacheTimeout": 0
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.hinch",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Allow HINCH MART to access your location for accurate delivery address and project site detection."
+      },
       "config": {
         "googleMapsApiKey": "AIzaSyBQHBaFfRCHgCGKIpSm-EOsVy8dExFToeA"
       }
     },
     "android": {
       "package": "com.hinch",
-      "versionCode": 3,
+      "versionCode": 29,
       "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
@@ -32,7 +34,7 @@
         "backgroundColor": "#FFFFFF"
       },
       "permissions": [
-        "NOTIFICATIONS",
+        "POST_NOTIFICATIONS",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "CAMERA",
@@ -54,7 +56,17 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow HINCH MART to access your location for delivery address detection."
         }
-      ]
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
+      ],
+      "expo-video"
     ],
     "web": {
       "favicon": "./assets/icon.png"

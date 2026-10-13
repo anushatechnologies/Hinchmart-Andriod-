@@ -1,9 +1,9 @@
 /**
- * HINCH MART — Badge, Chip & Avatar Components
- * Enhanced with icon support, outlined variant, and refined styling
+ * HINCH MART — Clean Modern Badge, Chip & Avatar Components
+ * Consistent 4px radius, clear semantic colors, refined typography
  */
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ViewStyle, TextStyle } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ViewStyle, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { useTheme } from '../../theme';
 import { getInitials } from '../../utils';
@@ -18,24 +18,24 @@ export interface BadgeProps {
 }
 
 export function Badge({ label, variant = 'danger', size = 'md', icon, style }: BadgeProps) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   const getColors = () => {
     switch (variant) {
       case 'primary':
-        return { bg: theme.colors.primary, text: theme.colors.navy };
+        return { bg: isDark ? '#4C0519' : '#FEF2F2', text: isDark ? '#F87171' : '#E31E24' };
       case 'success':
-        return { bg: theme.colors.successLight, text: theme.colors.success };
+        return { bg: isDark ? '#064E3B' : '#ECFDF5', text: isDark ? '#34D399' : '#059669' };
       case 'danger':
-        return { bg: theme.colors.dangerLight, text: theme.colors.danger };
+        return { bg: isDark ? '#4C0519' : '#FEF2F2', text: isDark ? '#F87171' : '#DC2626' };
       case 'warning':
-        return { bg: theme.colors.warningLight, text: theme.colors.warning };
+        return { bg: isDark ? '#451A03' : '#FFFBEB', text: isDark ? '#FBBF24' : '#D97706' };
       case 'info':
-        return { bg: theme.colors.infoLight, text: theme.colors.info };
+        return { bg: isDark ? '#0C4A6E' : '#F0F9FF', text: isDark ? '#38BDF8' : '#0284C7' };
       case 'navy':
-        return { bg: theme.colors.navy, text: theme.colors.surface };
+        return { bg: isDark ? '#1E293B' : '#152238', text: '#FFFFFF' };
       case 'outlined':
-        return { bg: 'transparent', text: theme.colors.textSecondary };
+        return { bg: 'transparent', text: isDark ? '#94A3B8' : '#64748B' };
     }
   };
 
@@ -47,7 +47,7 @@ export function Badge({ label, variant = 'danger', size = 'md', icon, style }: B
       style={[
         styles.badge,
         { backgroundColor: bg },
-        isOutlined && { borderWidth: 1, borderColor: theme.colors.border },
+        isOutlined && { borderWidth: 1, borderColor: isDark ? '#475569' : '#CBD5E1' },
         size === 'sm' && styles.badgeSm,
         style,
       ]}
@@ -72,7 +72,7 @@ export interface ChipProps {
 }
 
 export function Chip({ label, selected = false, onPress, iconLeft, style }: ChipProps) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   return (
     <TouchableOpacity
@@ -81,8 +81,16 @@ export function Chip({ label, selected = false, onPress, iconLeft, style }: Chip
       style={[
         styles.chip,
         {
-          backgroundColor: selected ? theme.colors.primary : theme.colors.surfaceVariant,
-          borderColor: selected ? theme.colors.primary : theme.colors.border,
+          backgroundColor: selected
+            ? theme.colors.primary
+            : isDark
+            ? '#1E293B'
+            : '#FFFFFF',
+          borderColor: selected
+            ? theme.colors.primary
+            : isDark
+            ? '#334155'
+            : '#E2E8F0',
         },
         style,
       ]}
@@ -91,7 +99,14 @@ export function Chip({ label, selected = false, onPress, iconLeft, style }: Chip
       <Text
         style={[
           styles.chipText,
-          { color: selected ? theme.colors.navy : theme.colors.textPrimary },
+          {
+            color: selected
+              ? '#FFFFFF'
+              : isDark
+              ? '#F1F5F9'
+              : '#334155',
+            fontWeight: selected ? '700' : '500',
+          },
         ]}
       >
         {label}
@@ -108,8 +123,8 @@ export interface AvatarProps {
   style?: ViewStyle;
 }
 
-export function Avatar({ source, name = 'User', size = 44, style }: AvatarProps) {
-  const { theme } = useTheme();
+export function Avatar({ source, name = 'User', size = 40, style }: AvatarProps) {
+  const { theme, isDark } = useTheme();
 
   return (
     <View
@@ -119,7 +134,7 @@ export function Avatar({ source, name = 'User', size = 44, style }: AvatarProps)
           width: size,
           height: size,
           borderRadius: size / 2,
-          backgroundColor: theme.colors.primaryLight,
+          backgroundColor: isDark ? '#334155' : '#E2E8F0',
         },
         style,
       ]}
@@ -131,7 +146,15 @@ export function Avatar({ source, name = 'User', size = 44, style }: AvatarProps)
           contentFit="cover"
         />
       ) : (
-        <Text style={[styles.avatarText, { color: theme.colors.primary, fontSize: size * 0.4 }]}>
+        <Text
+          style={[
+            styles.avatarText,
+            {
+              color: isDark ? '#F1F5F9' : '#152238',
+              fontSize: size * 0.38,
+            },
+          ]}
+        >
           {getInitials(name)}
         </Text>
       )}
@@ -143,22 +166,23 @@ const styles = StyleSheet.create({
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
     alignSelf: 'flex-start',
   },
   badgeSm: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 5,
     paddingVertical: 2,
-    borderRadius: 8,
+    borderRadius: 3,
   },
   badgeIcon: {
-    marginRight: 4,
+    marginRight: 3,
   },
   badgeText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
   },
   badgeTextSm: {
     fontSize: 10,
@@ -166,24 +190,28 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
     borderWidth: 1,
     marginRight: 8,
   },
   chipIcon: {
-    marginRight: 6,
+    marginRight: 5,
   },
   chipText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
+    fontSize: 12.5,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },
   avatar: {
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
-    fontFamily: 'Poppins_600SemiBold',
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
   },
 });
+
+export const HinchStatusBadge = Badge;
+export const HinchChip = Chip;

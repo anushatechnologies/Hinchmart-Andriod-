@@ -11,75 +11,188 @@ export type OrderStatus =
   | 'delivered'
   | 'cancelled'
   | 'returned'
-  | 'refunded';
+  | 'refunded'
+  | 'PAID'
+  | 'CONFIRMED'
+  | 'SHIPPED'
+  | 'DELIVERED'
+  | 'CANCELLED';
 
-export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'partially_refunded';
-export type PaymentMethod = 'card' | 'upi' | 'net_banking' | 'wallet' | 'cod' | 'bank_transfer';
+export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'partially_refunded' | 'PAID' | 'PENDING';
+export type PaymentMethod = string;
+
+export interface CheckoutPreviewRequest {
+  addressId: number | string;
+  deliverySlot?: string;
+  requiresCraneUnloading?: boolean;
+}
+
+export interface CheckoutPreview {
+  subtotal: number;
+  discount: number;
+  taxableAmount: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  totalGst: number;
+  freightCharge: number;
+  craneUnloadingCharge?: number;
+  grandTotal: number;
+}
+
+export interface CreateOrderRequest {
+  deliveryAddressId?: number | string;
+  addressId?: number | string;
+  paymentMethod: string;
+  couponCode?: string;
+  deliverySlot?: string;
+  deliveryInstructions?: string;
+  poNumber?: string;
+  requiresCraneUnloading?: boolean;
+  orderForSomeoneElse?: boolean;
+  recipientName?: string;
+  recipientPhone?: string;
+  notes?: string;
+}
+
+export interface CheckoutSummaryResponse {
+  subtotal: number;
+  discountAmount?: number;
+  deliveryFee?: number;
+  taxAmount?: number;
+  totalAmount: number;
+  storeId?: number;
+  [key: string]: any;
+}
+
+export interface VerifyPaymentRequest {
+  orderId: number | string;
+  paymentId?: string;
+  signature?: string;
+  razorpayPaymentId?: string;
+  razorpayOrderId?: string;
+  razorpaySignature?: string;
+  [key: string]: any;
+}
+
+export interface LiveOrderItem {
+  orderItemId: number | string;
+  productId: number | string;
+  title: string;
+  imageUrl?: string;
+  quantity: number;
+  unit: string;
+  weightKg?: number;
+  unitPrice: number;
+  originalPrice?: number;
+  appliedTier?: string;
+  gstRate?: number;
+  lineTotal: number;
+  lineGst?: number;
+}
 
 export interface Order {
-  id: string;
-  orderNumber: string;
-  userId: string;
-  items: OrderItem[];
-  shippingAddress: Address;
-  billingAddress: Address;
-  status: OrderStatus;
-  paymentStatus: PaymentStatus;
-  paymentMethod: PaymentMethod;
-  subtotal: number;
-  shippingCost: number;
-  tax: number;
-  discount: number;
-  walletUsed: number;
-  total: number;
-  currency: string;
-  couponCode: string | null;
-  tracking: TrackingInfo | null;
-  timeline: OrderTimeline[];
-  notes: string;
-  invoice: InvoiceInfo | null;
-  createdAt: string;
-  updatedAt: string;
-  estimatedDelivery: string;
+  id?: string | number;
+  orderId?: string | number;
+  orderNumber?: string;
+  storeId?: number;
+  storeName?: string;
+  storeSlug?: string;
+  storeInvoiceNumber?: string;
+  commissionRate?: number;
+  commissionAmount?: number;
+  userId?: string;
+  totalAmount?: number;
+  subtotal?: number;
+  discount?: number;
+  taxableAmount?: number;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  totalGst?: number;
+  freightCharge?: number;
+  craneUnloadingCharge?: number;
+  totalWeightKg?: number;
+  paymentMethod?: string;
+  paymentStatus?: string;
+  orderStatus?: string;
+  status?: string;
+  poNumber?: string;
+  deliverySlot?: string;
+  deliveryInstructions?: string;
+  requiresCraneUnloading?: boolean;
+  itemCount?: number;
+  firstItemTitle?: string;
+  firstItemImage?: string;
+  items?: any[];
+  shippingAddress?: Address;
+  billingAddress?: Address;
+  shippingCost?: number;
+  tax?: number;
+  walletUsed?: number;
+  total?: number;
+  grandTotal?: number;
+  currency?: string;
+  couponCode?: string | null;
+  tracking?: TrackingInfo | null;
+  timeline?: OrderTimeline[];
+  notes?: string;
+  orderForSomeoneElse?: boolean;
+  recipientName?: string;
+  recipientPhone?: string;
+  invoice?: InvoiceInfo | null;
+  createdAt?: string;
+  updatedAt?: string;
+  estimatedDelivery?: string;
 }
 
 export interface OrderItem {
-  id: string;
-  productId: string;
-  productName: string;
-  productImage: string;
-  variantId: string | null;
-  variantName: string | null;
+  id?: string | number;
+  orderItemId?: string | number;
+  productId: string | number;
+  productName?: string;
+  title?: string;
+  productImage?: string;
+  imageUrl?: string;
+  variantId?: string | null;
+  variantName?: string | null;
   quantity: number;
   unitPrice: number;
-  totalPrice: number;
-  sku: string;
+  totalPrice?: number;
+  lineTotal?: number;
+  unit?: string;
+  originalPrice?: number;
+  appliedTier?: string;
+  gstRate?: number;
+  lineGst?: number;
+  sku?: string;
 }
 
 export interface Address {
-  id: string;
-  label: string;
-  fullName: string;
-  phone: string;
-  addressLine1: string;
-  addressLine2: string;
-  city: string;
-  state: string;
-  country: string;
-  postalCode: string;
-  isDefault: boolean;
+  id: string | number;
+  label?: string;
+  fullName?: string;
+  phone?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postalCode?: string;
+  isDefault?: boolean;
   latitude?: number;
   longitude?: number;
 }
 
 export interface TrackingInfo {
-  carrier: string;
-  trackingNumber: string;
-  trackingUrl: string;
-  currentStatus: string;
-  currentLocation: string;
-  estimatedDelivery: string;
-  updates: TrackingUpdate[];
+  carrier?: string;
+  trackingNumber?: string;
+  trackingUrl?: string;
+  currentStatus?: string;
+  currentLocation?: string;
+  estimatedDelivery?: string;
+  updates?: TrackingUpdate[];
+  status?: string;
 }
 
 export interface TrackingUpdate {
@@ -98,14 +211,14 @@ export interface OrderTimeline {
 }
 
 export interface InvoiceInfo {
-  id: string;
-  invoiceNumber: string;
+  id?: string | number;
+  invoiceNumber?: string;
   url: string;
-  generatedAt: string;
+  generatedAt?: string;
 }
 
 export interface ReturnRequest {
-  orderId: string;
+  orderId: string | number;
   itemIds: string[];
   reason: string;
   description: string;

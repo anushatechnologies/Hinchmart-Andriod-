@@ -1,333 +1,251 @@
 /**
- * HINCH MART — Authentication API Service
- *
- * Phone Number + OTP Authentication Architecture.
- *
- * In Development Mode (`AUTH_CONFIG.developmentMode === true`):
- * - Accepts ONLY manual OTP (`123456`)
- * - Simulates instant mock OTP response without external SMS API calls
- * - Identifies existing users (`9876543210`) vs new users
- * - Creates mock user & session tokens for registration
- *
- * In Live Mode (`AUTH_CONFIG.developmentMode === false`):
- * - Delegates all calls to backend REST API endpoints
+ * HINCH MART — Live Buyer Authentication & OTP API Service
+ * Connects directly to live backend endpoints:
+ * 1. POST /auth/send-otp
+ * 2. POST /auth/verify-otp
+ * 3. POST /auth/login
+ * 4. POST /auth/signup
+ * 5. POST /auth/logout
+ * 6. POST /auth/refresh-token
  */
-import { AxiosResponse } from 'axios';
-import apiClient from './client';
+import apiClient, { unwrapApiResponse } from './client';
 import { API_ENDPOINTS } from '../../constants/api';
 import { ApiResponse, TokenPair } from '../../types/api.types';
+import { authStore } from '../../store/authStore';
 import {
   User,
+  LoginRequest,
+  SignupRequest,
   SendOtpRequest,
   SendOtpResponse,
   VerifyOtpRequest,
   VerifyOtpResponse,
-  RegisterRequest,
-  ExistingUserAuthResponse,
-  NewUserVerificationResponse,
+  ForgotPasswordRequest,
+  ResetPasswordRequest,
+  SyncUserRequest,
+  AuthSyncUser,
+  CheckPhoneResponse,
+  CheckPhoneData,
 } from '../../types/auth.types';
-import { AUTH_CONFIG } from '../../config/authConfig';
-import { tokenService } from '../tokenService';
-
-export interface AuthTokenResponse {
-  accessToken: string;
-  refreshToken: string;
-  user: User;
-}
-
-function createMockAxiosResponse<T>(
-  data: T,
-  message = 'Success',
-  statusCode = 200
-): AxiosResponse<ApiResponse<T>> {
-  return {
-    data: {
-      success: true,
-      data,
-      message,
-      statusCode,
-    },
-    status: statusCode,
-    statusText: 'OK',
-    headers: {},
-    config: {} as any,
-  };
-}
+import {
+  auth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+} from '../../config/firebase';
 
 export const authApi = {
   /**
-   * Send OTP to phone number for login or registration
-   * POST /api/auth/send-otp
+   * STEP 1: Send OTP to Email or 10-digit Phone
+   * Endpoint: POST /auth/send-otp
    */
-  sendOtp: async (
-    data: SendOtpRequest
-  ): Promise<AxiosResponse<ApiResponse<SendOtpResponse>>> => {
-    if (AUTH_CONFIG.developmentMode) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      const digits = data.phone.replace(/\D/g, '');
-      if (digits.length < 10) {
-        throw new Error('Please enter a valid 10-digit mobile number.');
-      }
-
-      return createMockAxiosResponse<SendOtpResponse>(
-        {
-          success: true,
-          message: 'OTP sent successfully',
-          expiresIn: 300,
-          resendAfter: AUTH_CONFIG.resendSeconds,
-        },
-        'OTP sent successfully'
-      );
-    }
-
-    const identifier = (data as any).identifier || data.phone;
-    return apiClient.post<ApiResponse<SendOtpResponse>>(
+  sendOtp: async (data: SendOtpRequest): Promise<SendOtpResponse> => {
+    const response = await apiClient.post<SendOtpResponse>(
       API_ENDPOINTS.AUTH.SEND_OTP,
       {
-        identifier,
-        purpose: 'LOGIN',
+        identifier: data.identifier.trim(),
+        purpose: data.purpose || 'LOGIN',
       }
     );
+    return response.data;
   },
 
   /**
-   * Verify OTP entered by user
-   * POST /api/auth/verify-otp
+   * STEP 2: Verify OTP & Issue Buyer JWT Session Tokens
+   * Endpoint: POST /auth/verify-otp
    */
-  verifyOtp: async (
-    data: VerifyOtpRequest & { identifier?: string; otpCode?: string }
-  ): Promise<AxiosResponse<ApiResponse<VerifyOtpResponse>>> => {
-    if (AUTH_CONFIG.developmentMode) {
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      // Strict validation: Only accept configured development OTP (123456)
-      if (data.otp !== AUTH_CONFIG.developmentOtp) {
-        const error: any = new Error('Invalid OTP. Please enter the correct OTP.');
-        error.statusCode = 400;
-        throw error;
-      }
-
-      const digits = data.phone.replace(/\D/g, '');
-      const last10 = digits.slice(-10);
-
-      // Check if phone matches any known existing mock user
-      const isExisting = AUTH_CONFIG.mockExistingUsers.some((u) => {
-        const uDigits = u.replace(/\D/g, '');
-        return uDigits.endsWith(last10);
-      });
-
-      if (isExisting) {
-        const existingProfile =
-          AUTH_CONFIG.mockExistingUserProfiles[last10] ||
-          AUTH_CONFIG.mockExistingUserProfiles['9876543210'];
-
-        const existingResponse: ExistingUserAuthResponse = {
-          success: true,
-          isNewUser: false,
-          accessToken: 'mock_jwt_access_token_' + Date.now(),
-          refreshToken: 'mock_jwt_refresh_token_' + Date.now(),
-          user: existingProfile,
-        };
-
-        return createMockAxiosResponse<VerifyOtpResponse>(
-          existingResponse,
-          'OTP verified successfully'
-        );
-      }
-
-      // New user path
-      const newResponse: NewUserVerificationResponse = {
-        success: true,
-        isNewUser: true,
-        verificationToken: `mock_vtok_${last10}_${Date.now()}`,
-      };
-
-      return createMockAxiosResponse<VerifyOtpResponse>(
-        newResponse,
-        'OTP verified successfully'
-      );
-    }
-
-    const identifier = data.identifier || data.phone;
-    const otpCode = data.otpCode || data.otp;
-    const response = await apiClient.post<any>(
+  verifyOtp: async (data: VerifyOtpRequest): Promise<VerifyOtpResponse> => {
+    const response = await apiClient.post<VerifyOtpResponse>(
       API_ENDPOINTS.AUTH.VERIFY_OTP,
       {
-        identifier,
-        otpCode,
-        purpose: 'LOGIN',
+        identifier: data.identifier.trim(),
+        otpCode: data.otpCode.trim(),
+        purpose: data.purpose || 'LOGIN',
       }
     );
-
-    // Map backend user object if returned in data
-    if (response.data && response.data.data) {
-      const resData = response.data.data;
-      if (resData.accessToken && resData.user) {
-        const rawUser = resData.user;
-        const fullName = rawUser.fullName || 'Valued Customer';
-        const nameParts = fullName.split(' ');
-        const firstName = nameParts[0] || 'Valued';
-        const lastName = nameParts.slice(1).join(' ') || 'Customer';
-
-        const mappedUser: User = {
-          id: String(rawUser.id),
-          phone: rawUser.phone || '',
-          email: rawUser.email || null,
-          firstName,
-          lastName,
-          fullName,
-          accountType: rawUser.role === 'BUYER' ? 'business' : 'individual',
-          businessProfile: rawUser.buyerProfile ? {
-            companyName: rawUser.buyerProfile.companyName || 'Apex Infra Projects Pvt Ltd',
-            gstNumber: rawUser.buyerProfile.gstin,
-          } : { companyName: rawUser.companyName || 'Apex Infra Projects Pvt Ltd' },
-          isVerified: true,
-          isPhoneVerified: true,
-          isEmailVerified: !!rawUser.email,
-          createdAt: rawUser.createdAt || new Date().toISOString(),
-          updatedAt: rawUser.createdAt || new Date().toISOString(),
-        };
-
-        const existingResponse: ExistingUserAuthResponse = {
-          success: true,
-          isNewUser: false,
-          accessToken: resData.accessToken,
-          refreshToken: resData.refreshToken,
-          user: mappedUser,
-        };
-
-        return {
-          ...response,
-          data: {
-            ...response.data,
-            data: existingResponse as any,
-          },
-        };
-      }
-    }
-
-    return response;
+    return response.data;
   },
 
   /**
-   * Register a new user after OTP verification
-   * POST /api/auth/register
+   * Firebase Direct Email/Password Sign-In
    */
-  register: async (
-    data: RegisterRequest & { phone?: string }
-  ): Promise<AxiosResponse<ApiResponse<AuthTokenResponse>>> => {
-    if (AUTH_CONFIG.developmentMode) {
-      await new Promise((resolve) => setTimeout(resolve, 300));
+  signInWithFirebase: async (email: string, pass: string) => {
+    const cred = await signInWithEmailAndPassword(auth, email.trim(), pass);
+    const idToken = await cred.user.getIdToken();
+    return { user: cred.user, idToken };
+  },
 
-      if (!data.firstName?.trim() || !data.lastName?.trim()) {
-        throw new Error('Please fill in all required fields.');
-      }
+  /**
+   * Firebase Direct Email/Password Sign-Up
+   */
+  signUpWithFirebase: async (email: string, pass: string) => {
+    const cred = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+    const idToken = await cred.user.getIdToken();
+    return { user: cred.user, idToken };
+  },
 
-      // Extract phone from verificationToken if possible
-      let userPhone = data.phone || '';
-      if (!userPhone && data.verificationToken) {
-        const parts = data.verificationToken.split('_');
-        if (parts.length >= 3) {
-          userPhone = `+91${parts[2]}`;
-        }
-      }
-      if (!userPhone) userPhone = '+919999999999';
-
-      const mockUser: User = {
-        id: `usr_${Date.now()}`,
-        phone: userPhone,
-        firstName: data.firstName.trim(),
-        lastName: data.lastName.trim(),
-        fullName: `${data.firstName.trim()} ${data.lastName.trim()}`,
-        email: data.email?.trim() || null,
-        accountType: data.accountType,
-        businessProfile: data.companyName?.trim()
-          ? { companyName: data.companyName.trim() }
-          : null,
-        isVerified: true,
-        isPhoneVerified: true,
-        isEmailVerified: !!data.email?.trim(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      const authData: AuthTokenResponse = {
-        accessToken: `mock_jwt_access_token_${Date.now()}`,
-        refreshToken: `mock_jwt_refresh_token_${Date.now()}`,
-        user: mockUser,
-      };
-
-      return createMockAxiosResponse<AuthTokenResponse>(
-        authData,
-        'Account created successfully'
-      );
-    }
-
-    return apiClient.post<ApiResponse<AuthTokenResponse>>(
-      API_ENDPOINTS.AUTH.REGISTER,
+  login: (data: LoginRequest) =>
+    apiClient.post<ApiResponse<{ user: User; tokens: TokenPair }>>(
+      API_ENDPOINTS.AUTH.LOGIN,
       data
+    ),
+
+  signup: (data: SignupRequest) =>
+    apiClient.post<ApiResponse<{ user: User; tokens: TokenPair }>>(
+      API_ENDPOINTS.AUTH.SIGNUP,
+      data
+    ),
+
+  logout: async () => {
+    try {
+      await apiClient.post<ApiResponse<null>>(API_ENDPOINTS.AUTH.LOGOUT);
+    } catch {}
+    try {
+      await signOut(auth);
+    } catch {}
+    return { success: true, message: 'Logged out successfully' };
+  },
+
+  logoutBackendOnly: async () => {
+    try {
+      await apiClient.post<ApiResponse<null>>(API_ENDPOINTS.AUTH.LOGOUT);
+    } catch {}
+  },
+
+  resendOTP: (data: { email?: string; phone?: string; type: string }) =>
+    apiClient.post<ApiResponse<null>>(API_ENDPOINTS.AUTH.RESEND_OTP, data),
+
+  forgotPassword: (data: ForgotPasswordRequest) =>
+    apiClient.post<ApiResponse<null>>(API_ENDPOINTS.AUTH.FORGOT_PASSWORD, data),
+
+  resetPassword: (data: ResetPasswordRequest) =>
+    apiClient.post<ApiResponse<null>>(API_ENDPOINTS.AUTH.RESET_PASSWORD, data),
+
+  /**
+   * Endpoint 4: Session Refresh / Token Re-evaluation
+   * Method: POST /api/auth/refresh-token
+   * Access: Authenticated (or supply token in header/body)
+   * Headers: Authorization: Bearer <accessToken>
+   */
+  refreshToken: async (tokenOrRefresh?: string): Promise<any> => {
+    const body: Record<string, any> = {};
+    if (tokenOrRefresh) {
+      body.refreshToken = tokenOrRefresh;
+    }
+    const response = await apiClient.post(API_ENDPOINTS.AUTH.REFRESH, body);
+    return unwrapApiResponse<any>(response);
+  },
+
+  /**
+   * Endpoint 2: Login & Token Exchange (User Sync)
+   * Primary login endpoint. Exchanges the Firebase ID Token for the internal HinchMart JWT (accessToken)
+   * and provisions/syncs the customer record in MySQL.
+   * Method: POST /api/auth/sync
+   * Access: Public
+   * Payload: { firebaseIdToken: string, name?: string, phone?: string, email?: string, role?: string }
+   */
+  syncUser: async (data?: SyncUserRequest, customFirebaseToken?: string): Promise<AuthSyncUser> => {
+    const payload: SyncUserRequest = {
+      ...(data || {}),
+      firebaseIdToken: data?.firebaseIdToken || customFirebaseToken,
+    };
+    const response = await apiClient.post(API_ENDPOINTS.AUTH.SYNC, payload, {
+      headers: {
+        skipAuth: 'true',
+      },
+    });
+    return unwrapApiResponse<AuthSyncUser>(response);
+  },
+
+  /**
+   * Endpoint 3: Current Authenticated User Profile
+   * Fetch current user session details and permissions.
+   * Method: GET /api/auth/me
+   * Access: Authenticated (Authorization: Bearer <accessToken>)
+   */
+  getMe: async (customToken?: string): Promise<AuthSyncUser> => {
+    const headers: Record<string, string> = {};
+    if (customToken) {
+      headers.Authorization = `Bearer ${customToken}`;
+    }
+    const response = await apiClient.get(API_ENDPOINTS.AUTH.ME, {
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+    });
+    return unwrapApiResponse<AuthSyncUser>(response);
+  },
+
+  /**
+   * Endpoint: Complete / Update Profile
+   * Method: PUT /api/user/profile
+   * Auth: Authorization: Bearer <accessToken>
+   */
+  updateAuthProfile: async (data: { name: string; email: string; phone?: string }, customToken?: string): Promise<any> => {
+    const headers: Record<string, string> = {};
+    if (customToken) {
+      headers.Authorization = `Bearer ${customToken}`;
+    }
+    const response = await apiClient.put(API_ENDPOINTS.USER.PROFILE, data, {
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+    });
+    return unwrapApiResponse<any>(response);
+  },
+
+  /**
+   * Endpoint 6: Claim Admin Role (Admin Portal Only)
+   * Upgrade an authorized admin email to the ADMIN role in MySQL and Firebase Custom Claims.
+   * Method: POST /api/auth/claim-admin
+   * Access: Bearer token of an authorized admin user.
+   */
+  claimAdmin: async (): Promise<any> => {
+    const response = await apiClient.post(API_ENDPOINTS.AUTH.CLAIM_ADMIN);
+    return unwrapApiResponse<any>(response);
+  },
+
+  /**
+   * Endpoint 1: Pre-Login Phone Verification
+   * Check if a user/seller profile already exists for the given phone number prior to sending an OTP.
+   * Method: GET /api/auth/check-phone?phone={phoneNumber}
+   * Access: Public (No auth headers required)
+   */
+  checkPhone: async (phone: string): Promise<CheckPhoneResponse> => {
+    const formattedPhone = phone.trim();
+    const response = await apiClient.get<CheckPhoneResponse>(
+      API_ENDPOINTS.AUTH.CHECK_PHONE,
+      {
+        params: { phone: formattedPhone },
+        headers: { skipAuth: 'true' },
+        validateStatus: (status) => status < 500,
+      }
     );
+    return response.data;
   },
 
   /**
-   * Get current authenticated user profile
-   * GET /api/auth/me
+   * Check if a mobile number is registered in the database
+   * Queries GET /api/auth/check-phone?phone={phoneNumber}
+   * If live backend returns 404 (e.g. pending deployment), falls back gracefully
+   * to the local persistent registry.
    */
-  getMe: async (): Promise<AxiosResponse<ApiResponse<User>>> => {
-    if (AUTH_CONFIG.developmentMode) {
-      const user = tokenService.getUser();
-      return createMockAxiosResponse<User>(
-        user || AUTH_CONFIG.mockExistingUserProfiles['9876543210'],
-        'User fetched successfully'
-      );
+  checkUserExists: async (phone: string): Promise<boolean> => {
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const fullPhone = phone.startsWith('+') ? phone : `+91${cleanPhone}`;
+
+    try {
+      // 1. Live backend check using exact GET /api/auth/check-phone?phone={phoneNumber}
+      const res = await authApi.checkPhone(fullPhone);
+
+      // Check specification response: res.data.exists
+      if (res && res.success && res.data && typeof res.data.exists === 'boolean') {
+        return res.data.exists;
+      }
+      if (res && typeof (res as any).exists === 'boolean') {
+        return (res as any).exists;
+      }
+    } catch {
+      // Endpoint error or network issue
     }
 
-    return apiClient.get<ApiResponse<User>>(API_ENDPOINTS.AUTH.ME);
-  },
-
-  /**
-   * Alias for getMe
-   */
-  getCurrentUser: async (): Promise<AxiosResponse<ApiResponse<User>>> => {
-    return authApi.getMe();
-  },
-
-  /**
-   * Refresh JWT access token using refresh token
-   * POST /api/auth/refresh-token
-   */
-  refreshToken: async (
-    refreshToken: string
-  ): Promise<AxiosResponse<ApiResponse<TokenPair>>> => {
-    if (AUTH_CONFIG.developmentMode) {
-      return createMockAxiosResponse<TokenPair>(
-        {
-          accessToken: `mock_refreshed_access_${Date.now()}`,
-          refreshToken: `mock_refreshed_refresh_${Date.now()}`,
-          expiresIn: 3600,
-        },
-        'Token refreshed'
-      );
-    }
-
-    return apiClient.post<ApiResponse<TokenPair>>(
-      API_ENDPOINTS.AUTH.REFRESH,
-      { refreshToken }
-    );
-  },
-
-  /**
-   * Logout current session
-   * POST /api/auth/logout
-   */
-  logout: async (): Promise<AxiosResponse<ApiResponse<null>>> => {
-    if (AUTH_CONFIG.developmentMode) {
-      return createMockAxiosResponse<null>(null, 'Logged out successfully');
-    }
-
-    return apiClient.post<ApiResponse<null>>(API_ENDPOINTS.AUTH.LOGOUT);
+    // 2. Persistent registered numbers database fallback
+    return authStore.isPhoneRegistered(fullPhone);
   },
 };
-
-export default authApi;

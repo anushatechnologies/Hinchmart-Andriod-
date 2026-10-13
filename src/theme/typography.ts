@@ -245,6 +245,46 @@ export const typography = {
     lineHeight: fontSizes.sm * lineHeights.snug,
     letterSpacing: letterSpacings.wide,
   },
+
+  // Price Display
+  priceLarge: {
+    fontFamily: fontFamilies.poppins.bold,
+    fontSize: fontSizes.xl,
+    lineHeight: fontSizes.xl * lineHeights.tight,
+    letterSpacing: letterSpacings.tight,
+  },
+  price: {
+    fontFamily: fontFamilies.poppins.bold,
+    fontSize: fontSizes.md,
+    lineHeight: fontSizes.md * lineHeights.tight,
+    letterSpacing: letterSpacings.normal,
+  },
+  priceSmall: {
+    fontFamily: fontFamilies.inter.semiBold,
+    fontSize: fontSizes.sm,
+    lineHeight: fontSizes.sm * lineHeights.tight,
+    letterSpacing: letterSpacings.normal,
+  },
+  priceCompare: {
+    fontFamily: fontFamilies.inter.regular,
+    fontSize: fontSizes.xs,
+    lineHeight: fontSizes.xs * lineHeights.normal,
+    letterSpacing: letterSpacings.normal,
+  },
+
+  // Section Headers
+  sectionTitle: {
+    fontFamily: fontFamilies.poppins.semiBold,
+    fontSize: fontSizes.lg,
+    lineHeight: fontSizes.lg * lineHeights.snug,
+    letterSpacing: letterSpacings.normal,
+  },
+  sectionSubtitle: {
+    fontFamily: fontFamilies.inter.regular,
+    fontSize: fontSizes.sm,
+    lineHeight: fontSizes.sm * lineHeights.normal,
+    letterSpacing: letterSpacings.normal,
+  },
 } as const;
 
 export type TypographyVariant = keyof typeof typography;

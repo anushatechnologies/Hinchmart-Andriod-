@@ -63,3 +63,23 @@ export const hitSlop = {
 export type Spacing = keyof typeof spacing;
 export type BorderRadius = keyof typeof borderRadius;
 export type IconSize = keyof typeof iconSizes;
+
+/** Named layout constants for consistent screen-level padding and component sizing */
+export const layout = {
+  screenPaddingH: 16,
+  headerHeight: 56,
+  tabBarHeight: 56,
+  searchBarHeight: 44,
+  buttonHeightSm: 36,
+  buttonHeightMd: 44,
+  buttonHeightLg: 52,
+  cardRadius: 10,
+  chipRadius: 6,
+  pillRadius: 20,
+  inputRadius: 8,
+  sectionGap: 24,
+  gridGap: 12,
+  cardElevation: 2,
+  stickyBarHeight: 64,
+} as const;
+

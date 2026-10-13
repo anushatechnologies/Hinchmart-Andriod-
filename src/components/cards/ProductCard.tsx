@@ -1,12 +1,12 @@
 /**
- * HINCH MART — Premium ProductCard Component
- * Enhanced with Ionicon hearts, gradient cart button, save tags, and verified brand badges
+ * HINCH MART — IBO-Inspired ProductCard Component
+ * White card on grey canvas, clean image → brand → title → price hierarchy
+ * Green discount badge, subtle shadow, clean add-to-cart button
  */
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ViewStyle, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { useTheme } from '../../theme';
 import { Product } from '../../types/product.types';
@@ -16,18 +16,25 @@ import { Badge } from '../ui/Badge';
 import { Rating } from '../ui/Rating';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { toggleWishlist, selectIsWishlisted } from '../../redux/slices/wishlistSlice';
-import { addItem } from '../../redux/slices/cartSlice';
+import { cartManager } from '../../services/cart/cartManager';
+import {
+  showCartToast,
+  selectCartQuantityByProductId,
+  selectCartItemByProductId,
+} from '../../redux/slices/cartSlice';
+import { wishlistApi } from '../../services/api/wishlist.api';
+import { resolveProductImage } from '../../hooks/useLiveProducts';
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 export interface ProductCardProps {
-  product: Product;
+  product: Product | any;
   onPress: () => void;
   variant?: 'grid' | 'list';
   style?: ViewStyle;
 }
 
-export function ProductCard({
+function ProductCardComponent({
   product,
   onPress,
   variant = 'grid',
@@ -35,37 +42,118 @@ export function ProductCard({
 }: ProductCardProps) {
   const { theme, isDark } = useTheme();
   const dispatch = useAppDispatch();
-  const isWishlisted = useAppSelector(selectIsWishlisted(product.id));
+
+  const productId = String(product?.id || product?.productId || '');
+  const isWishlisted = useAppSelector(selectIsWishlisted(productId));
   const heartScale = useSharedValue(1);
   const cartScale = useSharedValue(1);
 
-  const primaryImage =
-    product.images.find((img) => img.isPrimary)?.url ?? product.images[0]?.url;
+  // Redux Cart State - single source of truth
+  const cartQuantity = useAppSelector(selectCartQuantityByProductId(productId));
+  const cartItem = useAppSelector(selectCartItemByProductId(productId));
+
+  // Safe image resolution
+  const rawImage =
+    (Array.isArray(product?.images) && product.images.length > 0
+      ? (product.images.find((img: any) => img?.isPrimary)?.url ||
+        (typeof product.images[0] === 'string' ? product.images[0] : product.images[0]?.url))
+      : null) ||
+    product?.image ||
+    product?.imageUrl || '';
+
+  const primaryImage = resolveProductImage(product, rawImage);
+
+  const productName = product?.name || product?.title || '';
+  const unitPrice =
+    typeof product?.price === 'number'
+      ? product.price
+      : (product?.price?.amount ?? (product as any)?.price ?? 0);
+
+  const comparePrice =
+    typeof product?.comparePrice === 'number'
+      ? product.comparePrice
+      : (product?.compareAtPrice?.amount ?? (product as any)?.comparePrice ?? product?.mrp ?? undefined);
+
+  const discountPercent =
+    typeof product?.discountPercent === 'number' && product.discountPercent > 0
+      ? product.discountPercent
+      : typeof (product as any)?.discountPercentage === 'number' && (product as any).discountPercentage > 0
+      ? (product as any).discountPercentage
+      : typeof (product as any)?.discount === 'number' && (product as any).discount > 0
+      ? (product as any).discount
+      : 0;
+
+  const brandName =
+    typeof product?.brand === 'string'
+      ? product.brand
+      : (product?.brand as any)?.name || 'HINCH DIRECT';
+
+  const ratingVal =
+    typeof product?.rating === 'number'
+      ? product.rating
+      : product?.rating?.average;
+
+  const reviewsCount = product?.reviewCount ?? product?.reviews;
+  const hasRealReviews =
+    typeof ratingVal === 'number' &&
+    ratingVal > 0 &&
+    typeof reviewsCount === 'number' &&
+    reviewsCount > 0;
+
+  // Sanitize unit: prevent 'Default' or empty string from showing
+  const rawUnit = String(product?.unit || '').trim();
+  const unitStr =
+    rawUnit && !['default', 'null', 'undefined', 'none', 'item'].includes(rawUnit.toLowerCase())
+      ? rawUnit
+      : '';
 
   const handleWishlistToggle = () => {
+    const nextState = !isWishlisted;
+    dispatch(toggleWishlist(productId));
     heartScale.value = withSpring(0.7, { damping: 8 }, () => {
       heartScale.value = withSpring(1, { damping: 12 });
     });
-    dispatch(toggleWishlist(product.id));
+    if (nextState) {
+      wishlistApi.addProduct(productId).catch(() => {});
+    } else {
+      wishlistApi.removeProduct(productId).catch(() => {});
+    }
   };
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async (e?: any) => {
+    e?.stopPropagation?.();
     cartScale.value = withSpring(0.8, { damping: 8 }, () => {
       cartScale.value = withSpring(1, { damping: 12 });
     });
-    dispatch(
-      addItem({
-        id: `${product.id}_default`,
-        productId: product.id,
-        product,
-        variantId: null,
-        variant: null,
-        quantity: 1,
-        unitPrice: product.price.amount,
-        totalPrice: product.price.amount,
-      })
-    );
+
+    const prodStoreId = (product as any)?.storeId;
+    await cartManager.addToCart(dispatch, product, 1, prodStoreId);
   };
+
+  const handleIncrement = (e?: any) => {
+    e?.stopPropagation?.();
+    cartScale.value = withSpring(1.15, { damping: 8 }, () => {
+      cartScale.value = withSpring(1, { damping: 12 });
+    });
+    cartManager.increment(dispatch, product, cartQuantity, cartItem);
+  };
+
+  const handleDecrement = (e?: any) => {
+    e?.stopPropagation?.();
+    cartScale.value = withSpring(0.85, { damping: 8 }, () => {
+      cartScale.value = withSpring(1, { damping: 12 });
+    });
+    const moq = typeof product?.moq === 'number' ? product.moq : 1;
+    cartManager.decrement(dispatch, product, cartQuantity, cartItem, moq);
+  };
+
+  const cardScale = useSharedValue(1);
+  const handlePressIn = () => { cardScale.value = withSpring(0.97, { damping: 18 }); };
+  const handlePressOut = () => { cardScale.value = withSpring(1, { damping: 18 }); };
+
+  const cardAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: cardScale.value }],
+  }));
 
   const heartAnimStyle = useAnimatedStyle(() => ({
     transform: [{ scale: heartScale.value }],
@@ -75,346 +163,546 @@ export function ProductCard({
     transform: [{ scale: cartScale.value }],
   }));
 
+  // ───── LIST VARIANT ─────
   if (variant === 'list') {
     return (
-      <Card onPress={onPress} variant="outlined" style={[styles.listCard, style]}>
-        <View style={styles.listImageWrapper}>
-          <Image source={{ uri: primaryImage }} style={styles.listImage} contentFit="cover" />
-          {product.price.discount && (
-            <Badge
-              label={`-${product.price.discount}%`}
-              variant="danger"
-              size="sm"
-              style={styles.discountBadge}
+      <AnimatedTouchable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={1}
+        style={cardAnimStyle}
+      >
+        <View
+          style={[
+            styles.listCard,
+            {
+              backgroundColor: theme.colors.cardBackground,
+              borderColor: isDark ? theme.colors.cardBorder : 'transparent',
+              borderWidth: isDark ? 1 : 0,
+              ...Platform.select({
+                ios: {
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: isDark ? 0 : 0.06,
+                  shadowRadius: 4,
+                },
+                android: { elevation: isDark ? 0 : 2 },
+              }),
+            },
+            style,
+          ]}
+        >
+          <View style={[styles.listImageWrapper, { backgroundColor: isDark ? '#2A2A2A' : '#F8F9FA' }]}>
+            <Image source={{ uri: primaryImage }} style={styles.listImage} contentFit="contain" cachePolicy="memory-disk" />
+            {discountPercent && discountPercent > 0 ? (
+              <View style={styles.listDiscountBadge}>
+                <Text style={styles.listDiscountText}>{discountPercent}% Off</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.listDetails}>
+            <Text numberOfLines={1} style={[styles.brandLabel, { color: theme.colors.textTertiary }]}>
+              {brandName}
+            </Text>
+            <Text
+              numberOfLines={2}
+              style={[styles.listProductName, { color: theme.colors.textPrimary }]}
+            >
+              {productName}
+            </Text>
+
+            {hasRealReviews ? <Rating rating={ratingVal} count={reviewsCount} showCount size={11} /> : null}
+
+            <View style={styles.listPriceRow}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+                  <Text style={[styles.listPrice, { color: theme.colors.textPrimary }]}>
+                    {formatPrice(unitPrice)}
+                  </Text>
+                  {discountPercent > 0 && comparePrice && comparePrice > unitPrice ? (
+                    <Text style={[styles.listMrp, { color: theme.colors.textTertiary }]}>
+                      {formatPrice(comparePrice)}
+                    </Text>
+                  ) : null}
+                  {unitStr ? (
+                    <Text style={[styles.listUnit, { color: theme.colors.textTertiary }]}>
+                      /{unitStr}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+
+              {cartQuantity > 0 ? (
+                <Animated.View style={[cartAnimStyle, styles.stepperWrapper]}>
+                  <TouchableOpacity
+                    onPress={handleDecrement}
+                    style={styles.stepperBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="remove" size={15} color="#FFFFFF" />
+                  </TouchableOpacity>
+
+                  <View style={styles.stepperValueContainer}>
+                    <Text style={styles.stepperValueText}>{cartQuantity}</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={handleIncrement}
+                    style={styles.stepperBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="add" size={15} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </Animated.View>
+              ) : (
+                <AnimatedTouchable
+                  onPress={handleAddToCart}
+                  style={[cartAnimStyle, styles.addCartBtn]}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="add" size={18} color="#FFFFFF" />
+                </AnimatedTouchable>
+              )}
+            </View>
+          </View>
+
+          <AnimatedTouchable onPress={handleWishlistToggle} style={[styles.listWishlistBtn, heartAnimStyle]}>
+            <Ionicons
+              name={isWishlisted ? 'heart' : 'heart-outline'}
+              size={18}
+              color={isWishlisted ? '#EF4444' : theme.colors.textTertiary}
             />
-          )}
+          </AnimatedTouchable>
         </View>
-
-        <View style={styles.listDetails}>
-          <View style={styles.brandRow}>
-            <Text style={[styles.brandText, { color: theme.colors.textTertiary }]}>
-              {product.brand.name}
-            </Text>
-            {product.brand.isVerified && (
-              <Ionicons name="checkmark-circle" size={12} color={theme.colors.info} style={{ marginLeft: 3 }} />
-            )}
-          </View>
-          <Text
-            numberOfLines={2}
-            style={[styles.productName, { color: theme.colors.textPrimary }]}
-          >
-            {product.name}
-          </Text>
-
-          <Rating rating={product.rating.average} count={product.reviewCount} showCount size={12} />
-
-          <View style={styles.priceRow}>
-            <Text style={[styles.price, { color: theme.colors.navy }]}>
-              {formatPrice(product.price.amount, product.price.currency)}
-            </Text>
-            {product.price.compareAtPrice && (
-              <Text style={[styles.comparePrice, { color: theme.colors.textDisabled }]}>
-                {formatPrice(product.price.compareAtPrice, product.price.currency)}
-              </Text>
-            )}
-            <Text style={[styles.unitText, { color: theme.colors.textTertiary }]}>
-              / {product.unit}
-            </Text>
-          </View>
-        </View>
-
-        <AnimatedTouchable onPress={handleWishlistToggle} style={[styles.wishlistBtnList, heartAnimStyle]}>
-          <Ionicons
-            name={isWishlisted ? 'heart' : 'heart-outline'}
-            size={20}
-            color={isWishlisted ? '#EF4444' : theme.colors.textTertiary}
-          />
-        </AnimatedTouchable>
-      </Card>
+      </AnimatedTouchable>
     );
   }
 
+  // ───── GRID VARIANT (IBO-INSPIRED) ─────
   return (
-    <Card onPress={onPress} variant="outlined" style={[styles.gridCard, style]}>
-      <View style={styles.gridImageWrapper}>
-        <Image source={{ uri: primaryImage }} style={styles.gridImage} contentFit="cover" />
+    <AnimatedTouchable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      activeOpacity={1}
+      style={[styles.gridCardWrapper, style, cardAnimStyle]}
+    >
+      <View
+        style={[
+          styles.gridCard,
+          {
+            backgroundColor: theme.colors.cardBackground,
+            borderColor: isDark ? theme.colors.cardBorder : 'transparent',
+            borderWidth: isDark ? 1 : 0,
+            ...Platform.select({
+              ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: isDark ? 0 : 0.06,
+                shadowRadius: 4,
+              },
+              android: { elevation: isDark ? 0 : 2 },
+            }),
+          },
+        ]}
+      >
+        {/* Image Container */}
+        <View style={[styles.gridImageWrapper, { backgroundColor: isDark ? '#2A2A2A' : '#F8F9FA' }]}>
+          <Image source={{ uri: primaryImage }} style={styles.gridImage} contentFit="contain" cachePolicy="memory-disk" />
 
-        {/* Bottom gradient overlay for image */}
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.06)']}
-          style={styles.imageGradient}
-        />
-
-        {product.price.discount && (
-          <View style={styles.discountTagWrap}>
-            <LinearGradient
-              colors={['#EF4444', '#DC2626']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.discountTag}
-            >
-              <Text style={styles.discountTagText}>-{product.price.discount}%</Text>
-            </LinearGradient>
-          </View>
-        )}
-
-        <AnimatedTouchable
-          onPress={handleWishlistToggle}
-          style={[
-            styles.wishlistBtnGrid,
-            heartAnimStyle,
-            {
-              backgroundColor: isDark ? 'rgba(22, 27, 34, 0.85)' : 'rgba(255, 255, 255, 0.92)',
-              ...(Platform.OS === 'ios'
-                ? { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 }
-                : { elevation: 2 }),
-            },
-          ]}
-        >
-          <Ionicons
-            name={isWishlisted ? 'heart' : 'heart-outline'}
-            size={16}
-            color={isWishlisted ? '#EF4444' : theme.colors.textSecondary}
-          />
-        </AnimatedTouchable>
-      </View>
-
-      <View style={styles.gridContent}>
-        <View style={styles.brandRow}>
-          <Text style={[styles.brandText, { color: theme.colors.textTertiary }]}>
-            {product.brand.name}
-          </Text>
-          {product.brand.isVerified && (
-            <Ionicons name="checkmark-circle" size={11} color={theme.colors.info} style={{ marginLeft: 3 }} />
-          )}
-        </View>
-        <Text
-          numberOfLines={2}
-          style={[styles.productNameGrid, { color: theme.colors.textPrimary }]}
-        >
-          {product.name}
-        </Text>
-
-        <Rating rating={product.rating.average} count={product.reviewCount} showCount size={11} />
-
-        {/* Save tag or B2B volume discount chip */}
-        {product.price.discount ? (
-          <View style={[styles.saveTag, { backgroundColor: `${theme.colors.success}14` }]}>
-            <Ionicons name="pricetag" size={10} color={theme.colors.success} />
-            <Text style={[styles.saveTagText, { color: theme.colors.success }]}>
-              Save {formatPrice(product.price.compareAtPrice! - product.price.amount, product.price.currency)}
-            </Text>
-          </View>
-        ) : (
-          <View style={[styles.saveTag, { backgroundColor: `${theme.colors.primary}18` }]}>
-            <Ionicons name="cube-outline" size={10} color={theme.colors.navy} />
-            <Text style={[styles.saveTagText, { color: theme.colors.navy }]}>
-              MOQ: {product.minOrderQuantity || 1} {product.unit || 'Unit'}
-            </Text>
-          </View>
-        )}
-
-        <View style={styles.gridPriceRow}>
-          <View>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-              <Text style={[styles.priceGrid, { color: theme.colors.navy }]}>
-                {formatPrice(product.price.amount, product.price.currency)}
-              </Text>
-              <Text style={[styles.unitSub, { color: theme.colors.textTertiary }]}>
-                {' '}/ {product.unit || 'Ton'}
-              </Text>
+          {/* Discount Badge — Top Left */}
+          {discountPercent && discountPercent > 0 ? (
+            <View style={styles.discountPill}>
+              <Text style={styles.discountPillText}>{discountPercent}% Off</Text>
             </View>
-            {product.price.compareAtPrice && (
-              <Text style={[styles.comparePrice, { color: theme.colors.textDisabled }]}>
-                {formatPrice(product.price.compareAtPrice, product.price.currency)}
-              </Text>
-            )}
-          </View>
+          ) : null}
 
+          {/* Express Delivery Badge */}
+          {(product?.is24HourDelivery || product?.deliveryType === '24_HOURS') ? (
+            <View style={[styles.expressTag, { top: (discountPercent && discountPercent > 0) ? 30 : 6 }]}>
+              <Ionicons name="flash" size={9} color="#059669" style={{ marginRight: 2 }} />
+              <Text style={styles.expressTagText}>24H</Text>
+            </View>
+          ) : null}
+
+          {/* Wishlist Heart — Top Right */}
           <AnimatedTouchable
-            onPress={handleAddToCart}
-            style={cartAnimStyle}
-            activeOpacity={0.8}
+            onPress={handleWishlistToggle}
+            style={[
+              styles.wishlistBtn,
+              heartAnimStyle,
+              { backgroundColor: isDark ? '#333' : '#FFFFFF' },
+            ]}
           >
-            <LinearGradient
-              colors={[theme.colors.primary, '#F9A825']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.addCartBtn}
-            >
-              <Ionicons name="bag-add" size={16} color={theme.colors.navy} />
-            </LinearGradient>
+            <Ionicons
+              name={isWishlisted ? 'heart' : 'heart-outline'}
+              size={16}
+              color={isWishlisted ? '#EF4444' : (isDark ? '#A0A0A0' : '#8C939D')}
+            />
           </AnimatedTouchable>
         </View>
+
+        {/* Content */}
+        <View style={styles.gridContent}>
+          {/* Brand */}
+          <Text numberOfLines={1} style={[styles.brandLabel, { color: theme.colors.textTertiary }]}>
+            {brandName}
+          </Text>
+
+          {/* Product Name */}
+          <Text
+            numberOfLines={2}
+            style={[styles.gridProductName, { color: theme.colors.textPrimary }]}
+          >
+            {productName}
+          </Text>
+
+          {/* Rating */}
+          {hasRealReviews ? <Rating rating={ratingVal} count={reviewsCount} showCount size={10} /> : null}
+
+          {/* Savings or Stock */}
+          {discountPercent > 0 && comparePrice && comparePrice > unitPrice ? (
+            <Text style={styles.savingsText}>
+              Save {formatPrice(comparePrice - unitPrice)}
+            </Text>
+          ) : (
+            <Text style={[styles.stockText, { color: theme.colors.textTertiary }]}>
+              In Stock{unitStr ? ` • ${unitStr}` : ''}
+            </Text>
+          )}
+
+          {/* Price Row + Add to Cart / Quantity Stepper */}
+          <View style={styles.gridPriceRow}>
+            <View style={styles.gridPriceCol}>
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                style={[styles.gridPrice, { color: theme.colors.textPrimary }]}
+              >
+                {formatPrice(unitPrice)}
+              </Text>
+              {discountPercent > 0 && comparePrice && comparePrice > unitPrice ? (
+                <Text numberOfLines={1} style={[styles.gridMrp, { color: theme.colors.textTertiary }]}>
+                  MRP {formatPrice(comparePrice)}
+                </Text>
+              ) : null}
+            </View>
+
+            {cartQuantity > 0 ? (
+              <Animated.View style={[cartAnimStyle, styles.stepperWrapper]}>
+                <TouchableOpacity
+                  onPress={handleDecrement}
+                  style={styles.stepperBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="remove" size={15} color="#FFFFFF" />
+                </TouchableOpacity>
+
+                <View style={styles.stepperValueContainer}>
+                  <Text style={styles.stepperValueText}>{cartQuantity}</Text>
+                </View>
+
+                <TouchableOpacity
+                  onPress={handleIncrement}
+                  style={styles.stepperBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add" size={15} color="#FFFFFF" />
+                </TouchableOpacity>
+              </Animated.View>
+            ) : (
+              <AnimatedTouchable
+                onPress={handleAddToCart}
+                style={[cartAnimStyle, styles.addCartBtn]}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add" size={18} color="#FFFFFF" />
+              </AnimatedTouchable>
+            )}
+          </View>
+        </View>
       </View>
-    </Card>
+    </AnimatedTouchable>
   );
 }
 
+export const ProductCard = React.memo(ProductCardComponent, (prevProps, nextProps) => {
+  const prevId = String(prevProps.product?.id || prevProps.product?.productId || '');
+  const nextId = String(nextProps.product?.id || nextProps.product?.productId || '');
+  const prevPrice = prevProps.product?.price;
+  const nextPrice = nextProps.product?.price;
+  const prevDiscount = prevProps.product?.discount || prevProps.product?.discountPercent;
+  const nextDiscount = nextProps.product?.discount || nextProps.product?.discountPercent;
+
+  return (
+    prevId === nextId &&
+    prevPrice === nextPrice &&
+    prevDiscount === nextDiscount &&
+    prevProps.variant === nextProps.variant
+  );
+});
+
 const styles = StyleSheet.create({
+  // ─── GRID VARIANT ───
+  gridCardWrapper: {
+    width: '100%',
+    marginBottom: 12,
+  },
   gridCard: {
-    width: '48%',
-    marginBottom: 16,
-    padding: 8,
-    borderRadius: 16,
+    width: '100%',
+    borderRadius: 10,
+    overflow: 'hidden',
+    flex: 1,
   },
   gridImageWrapper: {
     width: '100%',
     height: 150,
-    borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: '#F1F3F5',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   gridImage: {
-    width: '100%',
-    height: '100%',
+    width: '85%',
+    height: '85%',
   },
-  imageGradient: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 40,
-  },
-  discountBadge: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-  },
-  discountTagWrap: {
+  discountPill: {
     position: 'absolute',
     top: 8,
     left: 0,
-  },
-  discountTag: {
-    paddingHorizontal: 8,
+    backgroundColor: '#16A34A',
+    borderTopRightRadius: 4,
+    borderBottomRightRadius: 4,
+    paddingHorizontal: 6,
     paddingVertical: 3,
-    borderTopRightRadius: 6,
-    borderBottomRightRadius: 6,
   },
-  discountTagText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10,
+  discountPillText: {
     color: '#FFFFFF',
-    letterSpacing: 0.3,
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
   },
-  wishlistBtnGrid: {
+  expressTag: {
+    position: 'absolute',
+    left: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderTopRightRadius: 4,
+    borderBottomRightRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  expressTagText: {
+    color: '#059669',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  wishlistBtn: {
     position: 'absolute',
     top: 8,
     right: 8,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: { elevation: 2 },
+    }),
   },
   gridContent: {
-    marginTop: 10,
+    padding: 10,
+    flex: 1,
   },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  brandText: {
-    fontFamily: 'Inter_500Medium',
+  brandLabel: {
     fontSize: 10,
     textTransform: 'uppercase',
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
+    fontWeight: '500',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    marginBottom: 3,
   },
-  productNameGrid: {
-    fontFamily: 'Poppins_500Medium',
-    fontSize: 13,
-    lineHeight: 18,
-    marginVertical: 4,
-    height: 36,
+  gridProductName: {
+    fontSize: 12.5,
+    lineHeight: 17,
+    fontWeight: '500',
+    marginBottom: 4,
+    minHeight: 34,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },
-  saveTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginTop: 4,
-    gap: 3,
+  savingsText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#16A34A',
+    marginTop: 3,
+    marginBottom: 4,
   },
-  saveTagText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 9,
+  stockText: {
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 3,
+    marginBottom: 4,
   },
   gridPriceRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 8,
+    alignItems: 'center',
+    marginTop: 'auto',
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F1F3',
   },
-  priceGrid: {
-    fontFamily: 'Poppins_700Bold',
+  gridPriceCol: {
+    flex: 1,
+    marginRight: 6,
+    justifyContent: 'center',
+  },
+  gridPrice: {
+    fontWeight: '700',
     fontSize: 15,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
   },
-  unitSub: {
-    fontFamily: 'Inter_500Medium',
+  gridMrp: {
     fontSize: 10,
-  },
-  comparePrice: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
     textDecorationLine: 'line-through',
+    marginTop: 1,
   },
   addCartBtn: {
-    width: 34,
-    height: 34,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E31E24',
+  },
+  stepperWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#E31E24',
+    borderRadius: 8,
+    height: 32,
+    minWidth: 76,
+    paddingHorizontal: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#E31E24',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  stepperBtn: {
+    width: 24,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 6,
+  },
+  stepperValueContainer: {
+    minWidth: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  stepperValueText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    textAlign: 'center',
+  },
+
+  // ─── LIST VARIANT ───
+  listCard: {
+    flexDirection: 'row',
+    padding: 10,
+    marginBottom: 10,
     borderRadius: 10,
+    position: 'relative',
+  },
+  listImageWrapper: {
+    width: 90,
+    height: 90,
+    borderRadius: 8,
+    overflow: 'hidden',
+    position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  // List Layout
-  listCard: {
-    flexDirection: 'row',
-    marginBottom: 12,
-    padding: 10,
-    borderRadius: 16,
-    width: '100%',
-  },
-  listImageWrapper: {
-    width: 100,
-    height: 100,
-    borderRadius: 12,
-    overflow: 'hidden',
-    position: 'relative',
-  },
   listImage: {
-    width: '100%',
-    height: '100%',
+    width: '85%',
+    height: '85%',
+  },
+  listDiscountBadge: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    backgroundColor: '#16A34A',
+    borderTopLeftRadius: 8,
+    borderBottomRightRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  listDiscountText: {
+    color: '#FFF',
+    fontSize: 9,
+    fontWeight: '700',
   },
   listDetails: {
     flex: 1,
     marginLeft: 12,
     justifyContent: 'center',
   },
-  productName: {
-    fontFamily: 'Poppins_500Medium',
-    fontSize: 14,
-    lineHeight: 19,
-    marginVertical: 2,
+  listProductName: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+    marginBottom: 3,
   },
-  priceRow: {
+  listPriceRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     marginTop: 4,
   },
-  price: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 16,
-    marginRight: 6,
+  listPrice: {
+    fontWeight: '700',
+    fontSize: 15,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
   },
-  unitText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
+  listMrp: {
+    fontSize: 11,
+    textDecorationLine: 'line-through',
+    marginLeft: 5,
   },
-  wishlistBtnList: {
-    padding: 6,
+  listUnit: {
+    fontSize: 10,
+    marginLeft: 3,
+  },
+  listWishlistBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    padding: 4,
   },
 });
+
+export const HinchProductCard = ProductCard;
+export default ProductCard;

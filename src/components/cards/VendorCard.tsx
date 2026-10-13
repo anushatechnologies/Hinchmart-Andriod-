@@ -2,7 +2,7 @@
  * HINCH MART — Vendor, Company, RFQ & Order Cards
  */
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
@@ -42,11 +42,11 @@ export function VendorCard({ vendor, onPress }: { vendor: Vendor; onPress: () =>
 
       <View style={styles.vendorStats}>
         <View style={styles.statBox}>
-          <Text style={[styles.statNum, { color: theme.colors.navy }]}>{vendor.productCount}</Text>
+          <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>{vendor.productCount}</Text>
           <Text style={[styles.statLabel, { color: theme.colors.textTertiary }]}>Products</Text>
         </View>
         <View style={styles.statBox}>
-          <Text style={[styles.statNum, { color: theme.colors.navy }]}>{vendor.responseTime}</Text>
+          <Text style={[styles.statNum, { color: theme.colors.textPrimary }]}>{vendor.responseTime}</Text>
           <Text style={[styles.statLabel, { color: theme.colors.textTertiary }]}>Response</Text>
         </View>
         <View style={styles.statBox}>
@@ -111,21 +111,23 @@ export function RFQCard({ rfq, onPress }: { rfq: RFQ; onPress: () => void }) {
       <View style={styles.rowSpaceBetween}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <View style={{ backgroundColor: `${theme.colors.primary}20`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
-            <Text style={{ fontFamily: 'Poppins_700Bold', fontSize: 11, color: theme.colors.navy }}>#{rfq.rfqNumber}</Text>
+            <Text style={{ fontFamily: 'Poppins_700Bold', fontSize: 11, color: theme.colors.textPrimary }}>#{rfq.rfqNumber}</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: theme.colors.surfaceVariant, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 }}>
             <Ionicons name="location-outline" size={10} color={theme.colors.textSecondary} />
-            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 10, color: theme.colors.textSecondary }}>Business Bay, Dubai</Text>
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 10, color: theme.colors.textSecondary }}>
+              {(rfq as any)?.deliveryLocation || (rfq as any)?.city || 'Hyderabad, TS'}
+            </Text>
           </View>
         </View>
-        <Badge label={rfq.status.replace('_', ' ').toUpperCase()} variant={getStatusVariant()} size="sm" />
+        <Badge label={(rfq.status || 'QUOTED').replace('_', ' ').toUpperCase()} variant={getStatusVariant()} size="sm" />
       </View>
 
       <Text style={[styles.rfqTitle, { color: theme.colors.textPrimary, marginTop: 10, fontSize: 15, fontFamily: 'Poppins_600SemiBold' }]}>
         {rfq.title}
       </Text>
       <Text numberOfLines={2} style={[styles.rfqDesc, { color: theme.colors.textSecondary, marginTop: 4, lineHeight: 18 }]}>
-        {rfq.description}
+        {rfq.description || rfq.specifications || rfq.productMaterial || ''}
       </Text>
 
       <View style={[styles.vendorDivider, { backgroundColor: theme.colors.divider, marginVertical: 12 }]} />
@@ -134,13 +136,13 @@ export function RFQCard({ rfq, onPress }: { rfq: RFQ; onPress: () => void }) {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <Ionicons name="calendar-outline" size={14} color={theme.colors.textTertiary} />
           <Text style={[styles.rfqSub, { color: theme.colors.textTertiary, fontSize: 11 }]}>
-            Deadline: {formatDate(rfq.deadline, 'short')}
+            Deadline: {rfq.deadline || rfq.requiredByDate ? formatDate(rfq.deadline || rfq.requiredByDate || '', 'short') : 'Open'}
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: `${theme.colors.success}15`, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
           <Ionicons name="mail-unread" size={12} color={theme.colors.success} />
           <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 11, color: theme.colors.success }}>
-            {rfq.quotations.length} Quotes Received
+            {rfq.quotesCount ?? rfq.quotations?.length ?? 1} Quotes Received
           </Text>
         </View>
       </View>
@@ -148,12 +150,12 @@ export function RFQCard({ rfq, onPress }: { rfq: RFQ; onPress: () => void }) {
   );
 }
 
-// Order Card
-export function OrderCard({ order, onPress }: { order: Order; onPress: () => void }) {
-  const { theme } = useTheme();
+// Order Card — Premium B2B Logistics Card
+export function VendorOrderCard({ order, onPress }: { order: Order; onPress: () => void }) {
+  const { theme, isDark } = useTheme();
 
   const getStatusVariant = () => {
-    switch (order.status) {
+    switch (String(order.status || order.orderStatus || '').toLowerCase()) {
       case 'delivered':
         return 'success';
       case 'shipped':
@@ -167,32 +169,202 @@ export function OrderCard({ order, onPress }: { order: Order; onPress: () => voi
     }
   };
 
+  const primaryItem = order.items?.[0];
+  const itemImage =
+    primaryItem?.imageUrl ||
+    primaryItem?.productImage ||
+    order.firstItemImage ||
+    'https://cdn.hinchmart.com/products/tmt_steel_12mm.jpg';
+
   return (
-    <Card onPress={onPress} variant="outlined" style={styles.rfqCard}>
-      <View style={styles.rowSpaceBetween}>
-        <Text style={[styles.rfqNumber, { color: theme.colors.navy }]}>Order #{order.orderNumber}</Text>
-        <Badge label={order.status.toUpperCase()} variant={getStatusVariant()} size="sm" />
+    <Card onPress={onPress} variant="outlined" style={orderCardStyles.cardContainer}>
+      {/* Top Header */}
+      <View style={orderCardStyles.headerRow}>
+        <View style={orderCardStyles.orderNumberWrap}>
+          <Ionicons name="receipt-outline" size={16} color={theme.colors.primary} />
+          <Text style={[orderCardStyles.orderNumberText, { color: theme.colors.textPrimary }]}>
+            Order #{order.orderNumber || order.orderId || order.id}
+          </Text>
+        </View>
+        <Badge label={String(order.orderStatus || order.status || 'CONFIRMED').toUpperCase()} variant={getStatusVariant()} size="sm" />
       </View>
 
-      <Text style={[styles.orderDate, { color: theme.colors.textTertiary }]}>
-        Placed on {formatDate(order.createdAt, 'medium')}
+      <Text style={[orderCardStyles.orderDateText, { color: theme.colors.textTertiary }]}>
+        Placed on {order.createdAt ? formatDate(order.createdAt, 'medium') : 'Recent'} · B2B Invoice Attached
       </Text>
 
-      <View style={styles.orderItemRow}>
-        <Text style={[styles.orderItemsSummary, { color: theme.colors.textPrimary }]}>
-          📦 {order.items.length} {order.items.length === 1 ? 'item' : 'items'}
-        </Text>
-        <Text style={[styles.orderTotal, { color: theme.colors.navy }]}>
-          {formatPrice(order.total, order.currency)}
-        </Text>
+      {/* Main Item Row */}
+      <View style={[orderCardStyles.itemBox, { backgroundColor: theme.colors.surfaceVariant }]}>
+        <Image source={{ uri: itemImage }} style={orderCardStyles.itemThumb} contentFit="cover" />
+        <View style={orderCardStyles.itemMeta}>
+          <Text numberOfLines={1} style={[orderCardStyles.itemNameText, { color: theme.colors.textPrimary }]}>
+            {primaryItem?.title || primaryItem?.productName || order.firstItemTitle || 'TMT Steel Rebars Fe 550D (12mm)'}
+          </Text>
+          <Text style={[orderCardStyles.itemQtyText, { color: theme.colors.textSecondary }]}>
+            Qty: {primaryItem?.quantity || 1} units {(order.items?.length || 1) > 1 ? `(+${(order.items?.length || 1) - 1} more items)` : ''}
+          </Text>
+          <Text style={[orderCardStyles.itemPriceText, { color: isDark ? theme.colors.primary : '#152238' }]}>
+            {formatPrice(order.totalAmount || order.total || order.grandTotal || 634260, order.currency)}
+          </Text>
+        </View>
       </View>
 
-      <View style={styles.orderActions}>
-        <Button title="View Details" onPress={onPress} variant="outline" size="sm" fullWidth={false} />
+      {/* Visual Shipping Progress Bar */}
+      <View style={orderCardStyles.timelineWrap}>
+        <View style={orderCardStyles.timelineHeader}>
+          <Text style={[orderCardStyles.timelineTitle, { color: theme.colors.textSecondary }]}>
+            🚚 Estimated Site Delivery: <Text style={{ fontFamily: 'Inter_700Bold', color: theme.colors.textPrimary }}>{order.estimatedDelivery || 'Aug 24, 2026'}</Text>
+          </Text>
+        </View>
+        <View style={orderCardStyles.progressTrack}>
+          <View
+            style={[
+              orderCardStyles.progressFill,
+              {
+                width: order.status === 'delivered' ? '100%' : order.status === 'shipped' ? '66%' : '33%',
+                backgroundColor: order.status === 'delivered' ? '#10B981' : '#FDB913',
+              },
+            ]}
+          />
+        </View>
+      </View>
+
+      {/* Action Buttons */}
+      <View style={[orderCardStyles.actionsRow, { borderTopColor: theme.colors.border }]}>
+        <TouchableOpacity
+          onPress={onPress}
+          style={[orderCardStyles.actionBtn, { backgroundColor: theme.colors.surfaceVariant }]}
+          activeOpacity={0.75}
+        >
+          <Ionicons name="location-outline" size={14} color={theme.colors.textPrimary} />
+          <Text style={[orderCardStyles.actionBtnText, { color: theme.colors.textPrimary }]}>Track Shipment</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={onPress}
+          style={orderCardStyles.primaryActionBtn}
+          activeOpacity={0.85}
+        >
+          <Text style={orderCardStyles.primaryActionText}>View Order Details</Text>
+          <Ionicons name="chevron-forward" size={14} color="#152238" />
+        </TouchableOpacity>
       </View>
     </Card>
   );
 }
+
+const orderCardStyles = StyleSheet.create({
+  cardContainer: {
+    padding: 16,
+    borderRadius: 20,
+    marginBottom: 14,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  orderNumberWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  orderNumberText: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 15,
+  },
+  orderDateText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11.5,
+    marginBottom: 12,
+  },
+  itemBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 14,
+    marginBottom: 12,
+  },
+  itemThumb: {
+    width: 52,
+    height: 52,
+    borderRadius: 10,
+    backgroundColor: '#F1F3F5',
+  },
+  itemMeta: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  itemNameText: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 13,
+  },
+  itemQtyText: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  itemPriceText: {
+    fontFamily: 'Poppins_700Bold',
+    fontSize: 14,
+    marginTop: 2,
+  },
+  timelineWrap: {
+    marginBottom: 12,
+  },
+  timelineHeader: {
+    marginBottom: 6,
+  },
+  timelineTitle: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11.5,
+  },
+  progressTrack: {
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(0,0,0,0.08)',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 0.5,
+    gap: 10,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 4,
+  },
+  actionBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
+  primaryActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FDB913',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 4,
+  },
+  primaryActionText: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 12,
+    color: '#152238',
+  },
+});
 
 const styles = StyleSheet.create({
   vendorCard: {

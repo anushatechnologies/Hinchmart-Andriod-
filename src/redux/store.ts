@@ -23,7 +23,7 @@ import notificationReducer from './slices/notificationSlice';
 const persistConfig = {
   key: 'hinchmart-root',
   storage: mmkvReduxStorage,
-  whitelist: ['auth', 'theme', 'cart', 'wishlist'],
+  whitelist: ['auth', 'theme', 'wishlist', 'cart'],
 };
 
 const rootReducer = combineReducers({

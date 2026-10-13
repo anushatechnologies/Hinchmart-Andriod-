@@ -1,6 +1,6 @@
 /**
- * HINCH MART — Screen, Header & Section Layout Components
- * Enhanced with refined header styling, improved section typography, and subtle shadow depths
+ * HINCH MART — IBO-Inspired Screen, Header & Section Layout Components
+ * Bold red header bar, white icons, clean section headers on grey canvas
  */
 import React from 'react';
 import {
@@ -49,7 +49,6 @@ export function Screen({
         styles.screenBase,
         {
           backgroundColor: theme.colors.background,
-          paddingTop: insets.top,
           paddingLeft: insets.left,
           paddingRight: insets.right,
         },
@@ -57,8 +56,8 @@ export function Screen({
       ]}
     >
       <StatusBar
-        barStyle={isDark ? 'light-content' : 'dark-content'}
-        backgroundColor={theme.colors.background}
+        barStyle="light-content"
+        backgroundColor={isDark ? '#B71C1C' : '#E31E24'}
         translucent
       />
       <KeyboardAvoidingView
@@ -68,7 +67,11 @@ export function Screen({
         {scrollable ? (
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={[styles.scrollContent, contentContainerStyle]}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingBottom: Math.max(insets.bottom, 16) + 84 },
+              contentContainerStyle,
+            ]}
             refreshControl={
               onRefresh ? (
                 <RefreshControl
@@ -90,15 +93,14 @@ export function Screen({
   );
 }
 
-// Premium Header Icon Button
+// IBO-Style Header Icon Button — White icons on red bar
 function HeaderIconButton({
   name,
   onPress,
   color,
-  size = 20,
+  size = 22,
   badge,
   badgeColor,
-  surfaceColor,
 }: {
   name: keyof typeof Ionicons.glyphMap;
   onPress?: () => void;
@@ -106,26 +108,27 @@ function HeaderIconButton({
   size?: number;
   badge?: number;
   badgeColor?: string;
-  surfaceColor: string;
 }) {
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.7}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      style={[styles.headerIconCircle, { backgroundColor: surfaceColor }]}
+      style={styles.headerIconBtn}
     >
       <Ionicons name={name} size={size} color={color} />
       {badge != null && badge > 0 && (
-        <View style={[styles.cartBadge, { backgroundColor: badgeColor || '#EF4444' }]}>
-          <Text style={styles.cartBadgeText}>{badge}</Text>
+        <View style={[styles.headerBadge, { backgroundColor: badgeColor || '#FFF' }]}>
+          <Text style={[styles.headerBadgeText, { color: badgeColor === '#FFF' ? '#E31E24' : '#FFF' }]}>
+            {badge > 99 ? '99+' : badge}
+          </Text>
         </View>
       )}
     </TouchableOpacity>
   );
 }
 
-// Top App Header Component
+// IBO-Style Top App Header — Bold Red Bar
 export interface HeaderProps {
   title?: string;
   showBack?: boolean;
@@ -137,8 +140,8 @@ export interface HeaderProps {
   showNotification?: boolean;
   onNotificationPress?: () => void;
   rightAction?: React.ReactNode;
-  rightComponent?: React.ReactNode;
   style?: ViewStyle;
+  variant?: 'primary' | 'surface'; // primary = red, surface = white/dark surface
 }
 
 export function Header({
@@ -152,87 +155,130 @@ export function Header({
   showNotification = false,
   onNotificationPress,
   rightAction,
-  rightComponent,
   style,
+  variant = 'primary',
 }: HeaderProps) {
   const { theme, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const cartCount = useAppSelector(selectCartItemCount);
-  const iconSurface = `${theme.colors.textPrimary}0D`;
+  const unreadNotifCount = useAppSelector((state) => state.notifications.unreadCount);
+
+  const isPrimaryVariant = variant === 'primary';
+
+  // Color scheme based on variant
+  const headerBg = isPrimaryVariant
+    ? (isDark ? '#B71C1C' : '#E31E24')
+    : (isDark ? '#1E1E1E' : '#FFFFFF');
+  const iconColor = isPrimaryVariant ? '#FFFFFF' : theme.colors.textPrimary;
+  const titleColor = isPrimaryVariant ? '#FFFFFF' : theme.colors.textPrimary;
+  const borderColor = isPrimaryVariant ? 'transparent' : theme.colors.border;
 
   return (
     <View
       style={[
         styles.headerContainer,
         {
-          backgroundColor: isDark ? 'rgba(22, 27, 34, 0.96)' : 'rgba(255, 255, 255, 0.97)',
-          borderBottomColor: theme.colors.border,
-          ...(Platform.OS === 'ios'
-            ? {
-                shadowColor: '#0F172A',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: isDark ? 0.2 : 0.04,
-                shadowRadius: 8,
-              }
-            : { elevation: 2 }),
+          backgroundColor: headerBg,
+          borderBottomColor: borderColor,
+          borderBottomWidth: isPrimaryVariant ? 0 : 1,
+          paddingTop: insets.top,
+          ...(isPrimaryVariant
+            ? Platform.select({
+                ios: {
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 4,
+                },
+                android: { elevation: 4 },
+              })
+            : Platform.select({
+                ios: {
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 2,
+                },
+                android: { elevation: 2 },
+              })),
         },
         style,
       ]}
     >
-      <View style={styles.headerLeft}>
-        {showBack && (
-          <HeaderIconButton
-            name="chevron-back"
-            onPress={onBackPress}
-            color={theme.colors.textPrimary}
-            surfaceColor={iconSurface}
-          />
-        )}
-
-        {/* App Logo & Title Brand Container */}
-        {!title ? (
-          // Main Home Screen — Full Brand Logo
-          <View style={styles.brandContainer}>
-            <Image
-              source={require('../../../assets/logo.png')}
-              style={styles.headerLogoImage}
-              contentFit="contain"
-              contentPosition="left center"
+      <View style={styles.headerInner}>
+        <View style={styles.headerLeft}>
+          {showBack && (
+            <HeaderIconButton
+              name="arrow-back"
+              onPress={onBackPress}
+              color={iconColor}
+              size={24}
             />
-          </View>
-        ) : (
-          // All Other Screens — Compact Brand App Icon + Screen Title
-          <View style={styles.brandTitleContainer}>
-            <Image
-              source={require('../../../assets/icon.png')}
-              style={styles.headerAppIcon}
-              contentFit="cover"
+          )}
+
+          {/* App Logo & Title */}
+          {!title ? (
+            <View style={styles.brandContainer}>
+              <Image
+                source={
+                  isPrimaryVariant
+                    ? require('../../../assets/logo-white.png')
+                    : require('../../../assets/logo-horizontal-color.png')
+                }
+                style={styles.headerLogoImage}
+                contentFit="contain"
+                contentPosition="left center"
+              />
+            </View>
+          ) : (
+            <View style={styles.brandTitleContainer}>
+              <Text
+                numberOfLines={1}
+                style={[styles.headerTitle, { color: titleColor }]}
+              >
+                {title}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.headerRight}>
+          {showSearch && (
+            <HeaderIconButton
+              name="search"
+              onPress={onSearchPress}
+              color={iconColor}
             />
-            <Text
-              numberOfLines={1}
-              style={[styles.headerTitle, { color: theme.colors.textPrimary }]}
-            >
-              {title}
-            </Text>
-          </View>
-        )}
-      </View>
+          )}
 
-      <View style={styles.headerRight}>
-        {showSearch && (
-          <HeaderIconButton name="search" onPress={onSearchPress} color={theme.colors.textPrimary} surfaceColor={iconSurface} />
-        )}
+          {showNotification && (
+            <HeaderIconButton
+              name="notifications-outline"
+              onPress={onNotificationPress}
+              color={iconColor}
+              badge={unreadNotifCount}
+              badgeColor={isPrimaryVariant ? '#FFF' : '#EF4444'}
+            />
+          )}
 
-        {showNotification && (
-          <HeaderIconButton name="notifications-outline" onPress={onNotificationPress} color={theme.colors.textPrimary} surfaceColor={iconSurface} />
-        )}
+          {showCart && (
+            <HeaderIconButton
+              name="cart-outline"
+              onPress={onCartPress}
+              color={iconColor}
+              badge={cartCount}
+              badgeColor={isPrimaryVariant ? '#FFF' : '#EF4444'}
+            />
+          )}
 
-        {rightComponent || rightAction}
+          {rightAction}
+        </View>
       </View>
     </View>
   );
 }
 
-// Section Component
+// Section Component — Clean IBO-style section headers
 export interface SectionProps {
   title: string;
   subtitle?: string;
@@ -246,7 +292,7 @@ export function Section({
   title,
   subtitle,
   onSeeAll,
-  seeAllText = 'See All',
+  seeAllText = 'View All',
   children,
   style,
 }: SectionProps) {
@@ -255,7 +301,7 @@ export function Section({
   return (
     <View style={[styles.sectionContainer, style]}>
       <View style={styles.sectionHeader}>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingRight: 8 }}>
           <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>{title}</Text>
           {subtitle && (
             <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>
@@ -267,11 +313,13 @@ export function Section({
         {onSeeAll && (
           <TouchableOpacity
             onPress={onSeeAll}
-            style={[styles.seeAllBtn, { backgroundColor: `${theme.colors.primary}12` }]}
             activeOpacity={0.7}
+            style={styles.viewAllBtn}
           >
-            <Text style={[styles.seeAllText, { color: theme.colors.primary }]}>{seeAllText}</Text>
-            <Ionicons name="arrow-forward" size={13} color={theme.colors.primary} style={{ marginLeft: 3 }} />
+            <Text style={styles.viewAllText}>
+              {seeAllText}
+            </Text>
+            <Ionicons name="chevron-forward" size={14} color="#E31E24" style={{ marginLeft: 2 }} />
           </TouchableOpacity>
         )}
       </View>
@@ -280,6 +328,10 @@ export function Section({
     </View>
   );
 }
+
+export const HinchHeader = Header;
+export const HinchSectionHeader = Section;
+export const HinchScreen = Screen;
 
 const styles = StyleSheet.create({
   screenBase: {
@@ -290,83 +342,79 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingBottom: 80,
   },
   headerContainer: {
-    height: 60,
+    direction: 'ltr',
+  },
+  headerInner: {
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    borderBottomWidth: 0.5,
-    direction: 'ltr',
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
     paddingRight: 8,
-    gap: 8,
+    gap: 10,
   },
   brandContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-start',
-    height: 38,
+    height: 36,
   },
   headerLogoImage: {
-    width: 142,
-    height: 36,
+    width: 140,
+    height: 34,
   },
   brandTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    gap: 8,
-  },
-  headerAppIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 7,
   },
   headerTitle: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 20,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '600',
+    fontSize: 18,
     flex: 1,
+    letterSpacing: -0.2,
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
-  headerIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
   },
-  cartBadge: {
+  headerBadge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
+    top: 2,
+    right: 2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 4,
-    borderWidth: 1.5,
-    borderColor: '#FFF',
+    borderWidth: 2,
+    borderColor: '#E31E24',
   },
-  cartBadgeText: {
-    color: '#FFF',
-    fontSize: 8,
-    fontFamily: 'Inter_700Bold',
+  headerBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
   },
   sectionContainer: {
-    marginVertical: 14,
+    marginTop: 24,
     paddingHorizontal: 16,
   },
   sectionHeader: {
@@ -376,23 +424,25 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sectionTitle: {
-    fontFamily: 'Poppins_700Bold',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
     fontSize: 18,
+    letterSpacing: -0.3,
   },
   sectionSubtitle: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
+    fontSize: 13,
     marginTop: 2,
+    lineHeight: 18,
   },
-  seeAllBtn: {
+  viewAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
   },
-  seeAllText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 12,
+  viewAllText: {
+    fontWeight: '600',
+    fontSize: 13,
+    color: '#E31E24',
   },
 });

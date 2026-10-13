@@ -1,66 +1,52 @@
 /**
- * HINCH MART — Authentication Configuration
- *
- * Centralized settings for frontend OTP authentication and development mode.
- * Set `developmentMode: false` when connecting to the live backend OTP API.
+ * HINCH MART — Authentication Configuration & Development Mode Constants
  */
-import { User } from '../types/auth.types';
 
-export const AUTH_CONFIG = {
-  /**
-   * Set to `true` for frontend-only development mode using manual OTP.
-   * Set to `false` in production or when connecting to real backend OTP endpoints.
-   */
-  developmentMode: process.env.EXPO_PUBLIC_USE_MOCK_AUTH === 'true',
+export const authConfig = {
+  developmentMode: false,
+  existingTestPhone: '9876543210',
+  resendCooldown: 45,
 
-  /**
-   * Manual fixed OTP code accepted during development.
-   */
-  developmentOtp: '123456',
+  // Validation Patterns
+  phoneRegex: /^[6-9]\d{9}$/,
+  emailRegex: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+  gstinRegex: /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/,
+  panRegex: /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/,
 
-  /**
-   * Number of digits in the OTP code.
-   */
-  otpLength: 6,
-
-  /**
-   * Resend cooldown duration in seconds.
-   */
-  resendSeconds: 45,
-
-  /**
-   * List of 10-digit phone numbers considered existing users in development mode.
-   * If a user enters any of these numbers, OTP verification logs them directly into MainTabs.
-   * Any other number is routed to the New User Registration screen.
-   */
-  mockExistingUsers: [
-    '9876543210',
-    '+919876543210',
-  ],
-
-  /**
-   * Pre-configured mock profile for existing users.
-   */
-  mockExistingUserProfiles: {
-    '9876543210': {
-      id: 'usr_mock_9876543210',
-      phone: '+919876543210',
-      firstName: 'Rajesh',
-      lastName: 'Sharma',
-      fullName: 'Rajesh Sharma',
-      email: 'rajesh.sharma@hinchmart.com',
-      accountType: 'business' as const,
-      businessProfile: {
-        companyName: 'Apex Construction Ltd',
-        gstNumber: '27AABCU9603R1ZM',
-      },
+  // Test Profile for 9876543210
+  existingUser: {
+    id: 'dev-rajesh-001',
+    firstName: 'Rajesh',
+    lastName: 'Sharma',
+    fullName: 'Rajesh Sharma',
+    phone: '9876543210',
+    email: 'rajesh@example.com',
+    accountType: 'business' as const,
+    companyName: 'Apex Construction Ltd',
+    gstVerified: true,
+    avatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=200&q=80',
+    isVerified: true,
+    isPhoneVerified: true,
+    isEmailVerified: true,
+    businessProfile: {
+      id: 'bp-001',
+      companyName: 'Apex Construction Ltd',
+      companyLogo: null,
+      registrationNumber: '27AAACA12341Z5',
+      taxId: '27AAACA12341Z5',
+      industry: 'Commercial Construction & Infrastructure',
+      website: 'https://apexconstruction.com',
+      description: 'Tier-1 EPC Contractor specializing in high-rise and highway infrastructure.',
+      employeeCount: '250-500',
+      annualRevenue: '$10M+',
+      foundedYear: 2010,
+      certifications: ['ISO 9001', 'LEED Gold', 'OHSAS 18001'],
       isVerified: true,
-      isPhoneVerified: true,
-      isEmailVerified: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    } as User,
-  } as Record<string, User>,
+    },
+    language: 'en',
+    currency: 'USD',
+    timezone: 'Asia/Kolkata',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
 };
-
-export default AUTH_CONFIG;

@@ -7,7 +7,7 @@ export type { ColorScheme } from './colors';
 export { typography, fontFamilies, fontSizes, responsiveFontSize, lineHeights, letterSpacings } from './typography';
 export type { TypographyVariant, TextStyle as AppTextStyle } from './typography';
 
-export { spacing, borderRadius, iconSizes, hitSlop } from './spacing';
+export { spacing, borderRadius, iconSizes, hitSlop, layout } from './spacing';
 export type { Spacing, BorderRadius, IconSize } from './spacing';
 
 export { shadows } from './shadows';

@@ -1,9 +1,9 @@
 /**
- * HINCH MART — Premium Pill SearchBar with Ionicons
- * Enhanced with pill shape, focus glow, and refined inner styling
+ * HINCH MART — Clean Modern SearchBar with Ionicons
+ * Streamlined 44px height, crisp borders, professional ecommerce search styling
  */
 import React, { useRef, useState } from 'react';
-import { View, TextInput, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
+import { View, TextInput, TouchableOpacity, StyleSheet, ViewStyle, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 
@@ -13,6 +13,7 @@ export interface SearchBarProps {
   onSubmit?: () => void;
   onClear?: () => void;
   onVoicePress?: () => void;
+  onScanPress?: () => void;
   placeholder?: string;
   autoFocus?: boolean;
   editable?: boolean;
@@ -25,18 +26,21 @@ export function SearchBar({
   onSubmit,
   onClear,
   onVoicePress,
+  onScanPress,
   placeholder = 'Search cement, steel, tools...',
   autoFocus = false,
   editable = true,
   style,
 }: SearchBarProps) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const inputRef = useRef<TextInput>(null);
   const [isFocused, setIsFocused] = useState(false);
 
   const handleClear = () => {
     if (onClear) {
       onClear();
+    } else {
+      onChangeText('');
     }
     inputRef.current?.focus();
   };
@@ -46,24 +50,20 @@ export function SearchBar({
       style={[
         styles.container,
         {
-          backgroundColor: theme.colors.surfaceVariant,
-          borderColor: isFocused ? theme.colors.primary : theme.colors.border,
+          backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+          borderColor: isFocused ? theme.colors.primary : isDark ? '#334155' : '#E2E8F0',
           borderWidth: isFocused ? 1.5 : 1,
-        },
-        isFocused && {
-          shadowColor: theme.colors.primary,
-          shadowOffset: { width: 0, height: 0 },
-          shadowOpacity: 0.15,
-          shadowRadius: 8,
-          elevation: 2,
         },
         style,
       ]}
     >
-      {/* Search Icon with circle background */}
-      <View style={[styles.searchIconBg, { backgroundColor: `${theme.colors.primary}15` }]}>
-        <Ionicons name="search" size={16} color={theme.colors.primary} />
-      </View>
+      {/* Search Icon */}
+      <Ionicons
+        name="search"
+        size={18}
+        color={isFocused ? theme.colors.primary : isDark ? '#94A3B8' : '#64748B'}
+        style={styles.searchIcon}
+      />
 
       {/* Text Input */}
       <TextInput
@@ -74,37 +74,54 @@ export function SearchBar({
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
         placeholder={placeholder}
-        placeholderTextColor={theme.colors.inputPlaceholder}
+        placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
         autoFocus={autoFocus}
         editable={editable}
         returnKeyType="search"
         autoCapitalize="none"
         autoCorrect={false}
-        style={[styles.input, { color: theme.colors.textPrimary }]}
+        style={[
+          styles.input,
+          { color: isDark ? '#F1F5F9' : '#0F172A' },
+        ]}
       />
 
-      {/* Clear / Voice Button */}
+      {/* Clear / Voice / Scan Buttons */}
       {value.length > 0 ? (
         <TouchableOpacity
           onPress={handleClear}
           style={styles.actionBtn}
-          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.6}
         >
-          <View style={[styles.clearCircle, { backgroundColor: theme.colors.textTertiary }]}>
-            <Ionicons name="close" size={12} color="#FFFFFF" />
+          <View style={[styles.clearCircle, { backgroundColor: isDark ? '#475569' : '#CBD5E1' }]}>
+            <Ionicons name="close" size={12} color={isDark ? '#F1F5F9' : '#334155'} />
           </View>
         </TouchableOpacity>
-      ) : onVoicePress ? (
-        <TouchableOpacity
-          onPress={onVoicePress}
-          style={styles.actionBtn}
-          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-          activeOpacity={0.6}
-        >
-          <Ionicons name="mic-outline" size={20} color={theme.colors.textTertiary} />
-        </TouchableOpacity>
-      ) : null}
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {onScanPress && (
+            <TouchableOpacity
+              onPress={onScanPress}
+              style={styles.actionBtn}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.6}
+            >
+              <Ionicons name="scan-outline" size={19} color={isDark ? '#94A3B8' : '#64748B'} />
+            </TouchableOpacity>
+          )}
+          {onVoicePress && (
+            <TouchableOpacity
+              onPress={onVoicePress}
+              style={styles.actionBtn}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              activeOpacity={0.6}
+            >
+              <Ionicons name="mic-outline" size={19} color={isDark ? '#94A3B8' : '#64748B'} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -113,40 +130,37 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 22,
-    paddingHorizontal: 6,
-    height: 48,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 44,
     width: '100%',
     direction: 'ltr',
   },
-  searchIconBg: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    justifyContent: 'center',
-    alignItems: 'center',
+  searchIcon: {
     marginRight: 8,
   },
   input: {
     flex: 1,
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
+    fontSize: 13.5,
     height: '100%',
     paddingVertical: 0,
     textAlign: 'left',
     writingDirection: 'ltr',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },
   actionBtn: {
-    padding: 6,
+    padding: 4,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 4,
   },
   clearCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     alignItems: 'center',
+    justifyContent: 'center',
   },
 });
+
+export const HinchSearchBar = SearchBar;

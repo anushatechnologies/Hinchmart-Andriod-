@@ -1,80 +1,144 @@
 /**
- * HINCH MART — Premium Floating Glassmorphic Bottom Tab Navigator
- * Ultra-modern glassy translucent finish with BlurView, gold sheen border, and glow pills
+ * HINCH MART — Premium Glass Bottom Navigation Bar
+ * Features:
+ * - Frosted glass translucent surface with BlurView + subtle tint overlay
+ * - Rounded top corners (20px) elevated cleanly above screen content
+ * - Subtle border & soft shadow / elevation
+ * - Exactly 3 navigation items: Home | Categories | Account
+ * - Hinchmart signature active red (#E31E24), neutral gray inactive (#8C939D)
+ * - Dynamic safe-area padding handling across Android & iOS devices
  */
-import React from 'react';
-import { View, StyleSheet, Platform, TouchableOpacity, Text, useWindowDimensions } from 'react-native';
+import React, { useRef } from 'react';
+import { View, StyleSheet, Platform, TouchableOpacity, Text, Animated } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import { BottomTabParamList } from './types';
 import { useTheme } from '../theme';
-import { useAppSelector } from '../redux/hooks';
-import { selectCartItemCount } from '../redux/slices/cartSlice';
 
 import { HomeScreen } from '../features/home/screens/HomeScreen';
 import { CategoriesScreen } from '../features/products/screens/CategoriesScreen';
-import { RFQListScreen } from '../features/rfq/screens/RFQListScreen';
-import { CartScreen } from '../features/cart/screens/CartScreen';
 import { ProfileScreen } from '../features/profile/screens/ProfileScreen';
 
 const Tab = createBottomTabNavigator<BottomTabParamList>();
 
-// Custom Glassy Floating Tab Bar Component
-function CustomGlassyTabBar({ state, descriptors, navigation }: any) {
-  const insets = useSafeAreaInsets();
-  const { theme, isDark } = useTheme();
-  const { width: screenWidth } = useWindowDimensions();
-  const cartCount = useAppSelector(selectCartItemCount);
+// Clean 3-Tab Button — Color-only active state, responsive micro-press animation
+function TabBarButton({
+  route,
+  isFocused,
+  label,
+  onPress,
+  options,
+  iconName,
+  outlineName,
+  isDark,
+}: any) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
 
-  const isSmallScreen = screenWidth < 360;
-  const bottomMargin = insets.bottom > 0 ? insets.bottom + 2 : 10;
-  const horizontalMargin = isSmallScreen ? 8 : 12;
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.92,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 4,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1.0,
+      useNativeDriver: true,
+      speed: 25,
+      bounciness: 8,
+    }).start();
+  };
+
+  const activeColor = '#E31E24';
+  const inactiveColor = isDark ? '#717171' : '#8C939D';
 
   return (
-    <View
-      style={[
-        styles.floatingWrapper,
-        {
-          bottom: bottomMargin,
-          left: horizontalMargin,
-          right: horizontalMargin,
-        },
-      ]}
-      pointerEvents="box-none"
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityState={isFocused ? { selected: true } : {}}
+      accessibilityLabel={options.tabBarAccessibilityLabel || label}
+      testID={options.tabBarTestID}
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      activeOpacity={1}
+      style={styles.tabItem}
     >
-      <View style={styles.glassContainer}>
-        {/* Real-time Frosted Glass Blur Background */}
-        <BlurView
-          intensity={Platform.OS === 'ios' ? 85 : 95}
-          tint={isDark ? 'dark' : 'light'}
-          style={StyleSheet.absoluteFillObject}
+      <Animated.View style={{ alignItems: 'center', transform: [{ scale: scaleAnim }] }}>
+        <View style={styles.iconWrap}>
+          <Ionicons
+            name={isFocused ? iconName : outlineName}
+            size={22}
+            color={isFocused ? activeColor : inactiveColor}
+          />
+        </View>
+
+        <Text
+          style={[
+            styles.tabLabel,
+            {
+              color: isFocused ? activeColor : inactiveColor,
+              fontWeight: isFocused ? '600' : '400',
+            },
+          ]}
+        >
+          {label}
+        </Text>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
+
+// Premium Frosted Glass 3-Item Tab Bar Container
+function CustomTabBar({ state, descriptors, navigation }: any) {
+  const insets = useSafeAreaInsets();
+  const { isDark } = useTheme();
+
+  const paddingBottom = Math.max(insets.bottom, 8);
+
+  return (
+    <View style={styles.tabBarOuterWrapper} pointerEvents="box-none">
+      <View
+        style={[
+          styles.glassContainer,
+          {
+            paddingBottom,
+            borderTopColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(226, 232, 240, 0.9)',
+            borderLeftColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.7)',
+            borderRightColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.7)',
+          },
+        ]}
+      >
+        {/* Translucent Frosted Glass Background Layer */}
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: isDark
+                ? 'rgba(20, 24, 33, 0.94)'
+                : 'rgba(255, 255, 255, 0.94)',
+            },
+          ]}
         />
 
-        {/* Translucent Glass Shimmer Gradient Overlay */}
-        <LinearGradient
-          colors={
-            isDark
-              ? ['rgba(30, 41, 59, 0.85)', 'rgba(15, 23, 42, 0.92)']
-              : ['rgba(255, 255, 255, 0.90)', 'rgba(248, 250, 252, 0.82)']
-          }
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
+        {/* Top subtle highlight reflection */}
+        <View
+          style={[
+            styles.glassHighlightLine,
+            {
+              backgroundColor: isDark
+                ? 'rgba(255, 255, 255, 0.08)'
+                : 'rgba(255, 255, 255, 0.9)',
+            },
+          ]}
         />
 
-        {/* Gold Sheen Top Border Highlight */}
-        <LinearGradient
-          colors={['rgba(253, 185, 19, 0.7)', 'rgba(253, 185, 19, 0.15)', 'rgba(253, 185, 19, 0.7)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.goldSheenBorder}
-        />
-
-        {/* Tab Buttons Row */}
-        <View style={styles.tabsRow}>
+        {/* Tab Items Row */}
+        <View style={styles.tabBarInner}>
           {state.routes.map((route: any, index: number) => {
             const { options } = descriptors[route.key];
             const label =
@@ -93,8 +157,12 @@ function CustomGlassyTabBar({ state, descriptors, navigation }: any) {
                 canPreventDefault: true,
               });
 
-              if (!isFocused && !event.defaultPrevented) {
-                navigation.navigate(route.name);
+              if (!event.defaultPrevented) {
+                if (route.name === 'CategoriesTab') {
+                  navigation.navigate('CategoriesTab', { categoryId: null, navKey: Date.now() });
+                } else if (!isFocused) {
+                  navigation.navigate(route.name);
+                }
               }
             };
 
@@ -107,71 +175,23 @@ function CustomGlassyTabBar({ state, descriptors, navigation }: any) {
             } else if (route.name === 'CategoriesTab') {
               iconName = 'grid';
               outlineName = 'grid-outline';
-            } else if (route.name === 'RFQTab') {
-              iconName = 'document-text';
-              outlineName = 'document-text-outline';
-            } else if (route.name === 'CartTab') {
-              iconName = 'bag-handle';
-              outlineName = 'bag-handle-outline';
             } else if (route.name === 'ProfileTab') {
-              iconName = 'person-circle';
-              outlineName = 'person-circle-outline';
+              iconName = 'person';
+              outlineName = 'person-outline';
             }
 
-            const isCart = route.name === 'CartTab';
-
             return (
-              <TouchableOpacity
+              <TabBarButton
                 key={route.key}
-                accessibilityRole="button"
-                accessibilityState={isFocused ? { selected: true } : {}}
-                accessibilityLabel={options.tabBarAccessibilityLabel}
-                testID={options.tabBarTestID}
+                route={route}
+                isFocused={isFocused}
+                label={label}
                 onPress={onPress}
-                activeOpacity={0.7}
-                style={styles.tabItem}
-              >
-                <View
-                  style={[
-                    styles.iconPill,
-                    isFocused && {
-                      backgroundColor: 'rgba(253, 185, 19, 0.18)',
-                      borderColor: 'rgba(253, 185, 19, 0.45)',
-                      borderWidth: 1,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={isFocused ? iconName : outlineName}
-                    size={isFocused ? 20 : 18}
-                    color={isFocused ? theme.colors.primary : theme.colors.textTertiary}
-                  />
-
-                  {/* Cart Count Badge */}
-                  {isCart && cartCount > 0 && (
-                    <View style={[styles.cartBadge, { backgroundColor: theme.colors.danger }]}>
-                      <Text style={styles.cartBadgeText}>{cartCount > 99 ? '99+' : cartCount}</Text>
-                    </View>
-                  )}
-                </View>
-
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    styles.tabLabel,
-                    {
-                      color: isFocused ? theme.colors.primary : theme.colors.textTertiary,
-                      fontFamily: isFocused ? 'Inter_700Bold' : 'Inter_500Medium',
-                      fontSize: isSmallScreen ? 9.5 : 10.5,
-                    },
-                  ]}
-                >
-                  {label}
-                </Text>
-
-                {/* Active Indicator Glow Dot */}
-                {isFocused && <View style={[styles.glowDot, { backgroundColor: theme.colors.primary }]} />}
-              </TouchableOpacity>
+                options={options}
+                iconName={iconName}
+                outlineName={outlineName}
+                isDark={isDark}
+              />
             );
           })}
         </View>
@@ -183,98 +203,91 @@ function CustomGlassyTabBar({ state, descriptors, navigation }: any) {
 export function BottomTabNavigator() {
   return (
     <Tab.Navigator
-      tabBar={(props) => <CustomGlassyTabBar {...props} />}
+      tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarHideOnKeyboard: true,
+        lazy: true,
+        freezeOnBlur: true,
+        tabBarStyle: {
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: 'transparent',
+          borderTopWidth: 0,
+          elevation: 0,
+        },
       }}
     >
       <Tab.Screen name="HomeTab" component={HomeScreen} options={{ tabBarLabel: 'Home' }} />
       <Tab.Screen name="CategoriesTab" component={CategoriesScreen} options={{ tabBarLabel: 'Categories' }} />
-      <Tab.Screen name="RFQTab" component={RFQListScreen} options={{ tabBarLabel: 'RFQ' }} />
-      <Tab.Screen name="CartTab" component={CartScreen} options={{ tabBarLabel: 'Cart' }} />
       <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ tabBarLabel: 'Account' }} />
     </Tab.Navigator>
   );
 }
 
 const styles = StyleSheet.create({
-  floatingWrapper: {
+  tabBarOuterWrapper: {
     position: 'absolute',
-    elevation: 24,
-    shadowColor: '#090D16',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    zIndex: 100,
-  },
-  glassContainer: {
-    borderRadius: 28,
-    overflow: 'hidden',
-    borderWidth: 1.2,
-    borderColor: 'rgba(253, 185, 19, 0.35)',
-    height: 64,
-  },
-  goldSheenBorder: {
-    position: 'absolute',
-    top: 0,
+    bottom: 0,
     left: 0,
     right: 0,
-    height: 2,
+    backgroundColor: 'transparent',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
   },
-  tabsRow: {
+  glassContainer: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: 'hidden',
+    borderTopWidth: 1,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    paddingTop: 8,
+  },
+  glassHighlightLine: {
+    position: 'absolute',
+    top: 0,
+    left: 20,
+    right: 20,
+    height: 1,
+  },
+  tabBarInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    height: '100%',
-    paddingHorizontal: 2,
+    height: 52,
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 3,
-    position: 'relative',
+    paddingVertical: 2,
+    minHeight: 48,
   },
-  iconPill: {
-    width: 44,
+  iconWrap: {
+    width: 28,
     height: 28,
-    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
-    marginBottom: 1,
+    marginBottom: 2,
   },
   tabLabel: {
+    fontSize: 11,
     letterSpacing: 0.1,
-    textAlign: 'center',
-  },
-  glowDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginTop: 2,
-    shadowColor: '#FDB913',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 4,
-  },
-  cartBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -6,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 3,
-    borderWidth: 1.5,
-    borderColor: '#FFF',
-  },
-  cartBadgeText: {
-    color: '#FFF',
-    fontSize: 8,
-    fontFamily: 'Inter_700Bold',
+    lineHeight: 14,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },
 });
+
+export const HinchBottomNavigation = BottomTabNavigator;

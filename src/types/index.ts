@@ -10,3 +10,4 @@ export * from './rfq.types';
 export * from './vendor.types';
 export * from './company.types';
 export * from './user.types';
+export * from './appUpdate';

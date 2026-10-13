@@ -1,4 +1,5 @@
 export * from './ProductCard';
-export { VendorCard, CompanyCard, RFQCard } from './VendorCard';
-export * from './AddressCard';
+export * from './VendorCard';
+export * from './CategoryCard';
+export * from './CartCard';
 export * from './OrderCard';

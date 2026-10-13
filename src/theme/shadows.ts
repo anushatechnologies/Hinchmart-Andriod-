@@ -50,14 +50,16 @@ export const shadows = {
   inner: createShadow(0, 0, 0, 0), // Handled via background color
 
   // Branded shadows
-  primary: createShadow(4, 12, 0.25, 8, '#FDB913'),
-  navy: createShadow(4, 12, 0.3, 8, '#152238'),
-  card: createShadow(2, 8, 0.06, 3),
-  button: createShadow(2, 4, 0.15, 3),
-  modal: createShadow(8, 24, 0.2, 16),
-  bottomSheet: createShadow(-4, 16, 0.1, 12),
-  header: createShadow(2, 4, 0.08, 3),
-  tabBar: createShadow(-2, 8, 0.06, 8),
+  primary: createShadow(2, 6, 0.15, 3, '#E31E24'),
+  navy: createShadow(2, 6, 0.15, 3, '#152238'),
+  card: createShadow(1, 4, 0.06, 2), // IBO-style subtle card elevation
+  cardHover: createShadow(2, 8, 0.1, 4), // Pressed/focused card
+  button: createShadow(1, 3, 0.1, 2),
+  modal: createShadow(4, 16, 0.15, 8),
+  bottomSheet: createShadow(-2, 8, 0.08, 6),
+  header: createShadow(0, 2, 0.08, 3), // Clean header drop shadow
+  tabBar: createShadow(0, -1, 0.04, 3), // Minimal upward shadow
+  sticky: createShadow(0, -2, 0.08, 4), // Sticky bottom bar shadow
 } as const;
 
 export type Shadow = keyof typeof shadows;

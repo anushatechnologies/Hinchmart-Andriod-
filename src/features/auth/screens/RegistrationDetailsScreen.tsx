@@ -1,580 +1,770 @@
 /**
- * HINCH MART — Registration Details Screen (Frontend-Only)
- *
- * Profile completion for NEW users after OTP verification or direct registration.
- * No backend call — creates mock user and saves session locally.
+ * HINCH MART — Pixel-Perfect "Create Your Account" Registration Screen
+ * Contains ONLY:
+ * - Full Name input field (with person icon)
+ * - Mobile Number input field (with left-side country code picker dropdown +91 ▾)
+ * - Clean agreement notice to Terms & Privacy Policy
+ * - Royal Red "REGISTER" button (sends real phone SMS OTP)
+ * - "Already have an account? Login" link
  */
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
+  TextInput,
   TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
+  Modal,
+  Keyboard,
   StatusBar,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../../../theme';
-import { Input } from '../../../components/ui/Input';
-import { Button } from '../../../components/ui/Button';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { sendFirebasePhoneOtp } from '../../../services/api/firebaseAuth';
+import { FirebaseRecaptchaModal } from '../../../components/auth/FirebaseRecaptchaModal';
 import { authStore } from '../../../store/authStore';
-import { AccountType, User } from '../../../types/auth.types';
 
-const ACCOUNT_TYPES: Array<{
-  value: AccountType;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  desc: string;
-}> = [
-  { value: 'individual', label: 'Individual',  icon: 'person-outline',    desc: 'Personal use'      },
-  { value: 'business',   label: 'Business',    icon: 'business-outline',  desc: 'Company account'   },
-  { value: 'contractor', label: 'Contractor',  icon: 'construct-outline', desc: 'Project work'      },
-  { value: 'vendor',     label: 'Vendor',      icon: 'storefront-outline',desc: 'Sell on platform'  },
+export interface CountryCodeItem {
+  code: string;
+  dial: string;
+  name: string;
+  flag: string;
+  digits: number;
+}
+
+export const COUNTRY_CODES: CountryCodeItem[] = [
+  { code: 'IN', dial: '+91', name: 'India', flag: '🇮🇳', digits: 10 },
+  { code: 'AE', dial: '+971', name: 'United Arab Emirates', flag: '🇦🇪', digits: 9 },
+  { code: 'SA', dial: '+966', name: 'Saudi Arabia', flag: '🇸🇦', digits: 9 },
+  { code: 'US', dial: '+1', name: 'United States', flag: '🇺🇸', digits: 10 },
+  { code: 'GB', dial: '+44', name: 'United Kingdom', flag: '🇬🇧', digits: 10 },
+  { code: 'SG', dial: '+65', name: 'Singapore', flag: '🇸🇬', digits: 8 },
+  { code: 'QA', dial: '+974', name: 'Qatar', flag: '🇶🇦', digits: 8 },
+  { code: 'OM', dial: '+968', name: 'Oman', flag: '🇴🇲', digits: 8 },
+  { code: 'KW', dial: '+965', name: 'Kuwait', flag: '🇰🇼', digits: 8 },
+  { code: 'BH', dial: '+973', name: 'Bahrain', flag: '🇧🇭', digits: 8 },
+  { code: 'CA', dial: '+1', name: 'Canada', flag: '🇨🇦', digits: 10 },
+  { code: 'AU', dial: '+61', name: 'Australia', flag: '🇦🇺', digits: 9 },
+  { code: 'DE', dial: '+49', name: 'Germany', flag: '🇩🇪', digits: 10 },
+  { code: 'MY', dial: '+60', name: 'Malaysia', flag: '🇲🇾', digits: 10 },
 ];
 
-const COMPANY_REQUIRED: AccountType[] = ['business', 'contractor', 'vendor'];
-
 export function RegistrationDetailsScreen({ route, navigation }: any) {
-  const { theme, isDark } = useTheme();
-  const { verificationToken, phone: initialPhone = '', directRegister = false } = route?.params ?? {};
+  const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
 
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState(initialPhone.replace(/\+91/, ''));
-  const [accountType, setAccountType] = useState<AccountType>('individual');
-  const [companyName, setCompanyName] = useState('');
+  // Initialize with forwarded phone and country from Login screen if user was redirected
+  const initialPhone = String(route?.params?.phone || '');
+  const initialDial = route?.params?.countryDial || '+91';
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setIsKeyboardOpen(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setIsKeyboardOpen(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  // ONLY Full Name and Mobile Number
+  const [fullName, setFullName] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState<CountryCodeItem>(
+    COUNTRY_CODES.find((c) => c.dial === initialDial) || COUNTRY_CODES[0]
+  );
+  const [mobileNumber, setMobileNumber] = useState(initialPhone);
+
+  useEffect(() => {
+    if (route?.params?.phone) {
+      setMobileNumber(String(route.params.phone));
+    }
+    if (route?.params?.countryDial) {
+      const match = COUNTRY_CODES.find((c) => c.dial === route.params.countryDial);
+      if (match) setSelectedCountry(match);
+    }
+  }, [route?.params?.phone, route?.params?.countryDial]);
+
+  const [countryModalVisible, setCountryModalVisible] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+  const [recaptchaVisible, setRecaptchaVisible] = useState(false);
+
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const needsCompany = COMPANY_REQUIRED.includes(accountType);
+  const filteredCountries = COUNTRY_CODES.filter(
+    (c) =>
+      c.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
+      c.dial.includes(countrySearch) ||
+      c.code.toLowerCase().includes(countrySearch.toLowerCase())
+  );
 
   const validate = (): boolean => {
-    const errs: Record<string, string> = {};
+    const errs: { [key: string]: string } = {};
 
-    if (!firstName.trim()) errs.firstName = 'First name is required.';
-    if (!lastName.trim()) errs.lastName = 'Last name is required.';
-    
-    // Validate phone if direct register or if empty
-    const cleanPhone = phone.replace(/\D/g, '');
+    if (!fullName.trim()) {
+      errs.fullName = 'Full name is required';
+    } else if (fullName.trim().length < 2) {
+      errs.fullName = 'Please enter your full name';
+    }
+
+    const cleanPhone = mobileNumber.replace(/[^0-9]/g, '');
     if (!cleanPhone) {
-      errs.phone = 'Phone number is required.';
-    } else if (cleanPhone.length !== 10) {
-      errs.phone = 'Please enter a valid 10-digit phone number.';
-    }
-
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      errs.email = 'Please enter a valid email address.';
-    }
-    if (needsCompany && !companyName.trim()) {
-      errs.companyName = `Company name is required for ${accountType} accounts.`;
+      errs.mobileNumber = 'Mobile number is required';
+    } else if (selectedCountry.dial === '+91') {
+      if (cleanPhone.length !== 10) {
+        errs.mobileNumber = 'Mobile number must be exactly 10 digits';
+      } else if (!/^[6-9]/.test(cleanPhone)) {
+        errs.mobileNumber = 'Mobile number must start with 6, 7, 8, or 9';
+      }
+    } else {
+      const requiredDigits = selectedCountry.digits || 10;
+      if (cleanPhone.length !== requiredDigits) {
+        errs.mobileNumber = `Enter a valid ${requiredDigits}-digit mobile number`;
+      }
     }
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  const handleCreateAccount = async () => {
+  const handleRegister = async () => {
     if (!validate()) return;
 
-    setIsLoading(true);
-    try {
-      await new Promise((r) => setTimeout(r, 450));
+    setErrors({});
+    const cleanPhone = mobileNumber.replace(/[^0-9]/g, '');
+    const fullPhone = `${selectedCountry.dial}${cleanPhone}`;
 
-      const cleanPhone = phone.replace(/\D/g, '');
-
-      const mockUser: User = {
-        id: `usr_${Date.now()}`,
-        phone: `+91${cleanPhone}`,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        fullName: `${firstName.trim()} ${lastName.trim()}`,
-        email: email.trim() || null,
-        accountType,
-        businessProfile: needsCompany && companyName.trim()
-          ? { companyName: companyName.trim() }
-          : null,
-        isVerified: true,
-        isPhoneVerified: true,
-        isEmailVerified: !!email.trim(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      await authStore.saveSession({
-        user: mockUser,
-        accessToken: `mock_access_${Date.now()}`,
-        refreshToken: `mock_refresh_${Date.now()}`,
-      });
-
-      navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
-    } catch (err: any) {
-      setErrors({ submit: err?.message || 'Unable to create account. Please try again.' });
-    } finally {
-      setIsLoading(false);
+    if (Platform.OS === 'web') {
+      setIsLoading(true);
+      try {
+        await sendFirebasePhoneOtp(fullPhone);
+        authStore.saveRegisteredUserName(fullPhone, fullName.trim());
+        authStore.saveRegisteredUserName(cleanPhone, fullName.trim());
+        authStore.markPhoneRegistered(fullPhone);
+        authStore.markPhoneRegistered(cleanPhone);
+        setIsLoading(false);
+        navigation.navigate('OTP', {
+          phone: cleanPhone,
+          fullPhone,
+          countryDial: selectedCountry.dial,
+          countryFlag: selectedCountry.flag,
+          isNewUser: true,
+          returnScreen: route?.params?.returnScreen,
+          returnParams: route?.params?.returnParams,
+          action: route?.params?.action,
+          registrationPayload: {
+            fullName: fullName.trim(),
+            mobileNumber: fullPhone,
+          },
+        });
+      } catch (err: any) {
+        setIsLoading(false);
+        setErrors({
+          global: err?.message || 'Failed to send verification code. Please check your phone number and try again.',
+        });
+      }
+    } else {
+      // On Native Mobile (Android/iOS): Send real SMS OTP in background invisibly (no reCAPTCHA modal)
+      setIsLoading(true);
+      setRecaptchaVisible(true);
     }
   };
 
-  const handleAccountTypeChange = (type: AccountType) => {
-    setAccountType(type);
-    if (!COMPANY_REQUIRED.includes(type)) {
-      setCompanyName('');
-      if (errors.companyName) {
-        const next = { ...errors };
-        delete next.companyName;
-        setErrors(next);
-      }
-    }
+  const handleRecaptchaSuccess = (verificationId: string) => {
+    setIsLoading(false);
+    setRecaptchaVisible(false);
+    const cleanPhone = mobileNumber.replace(/[^0-9]/g, '');
+    const fullPhone = `${selectedCountry.dial}${cleanPhone}`;
+    authStore.saveRegisteredUserName(fullPhone, fullName.trim());
+    authStore.saveRegisteredUserName(cleanPhone, fullName.trim());
+    authStore.markPhoneRegistered(fullPhone);
+    authStore.markPhoneRegistered(cleanPhone);
+
+    navigation.navigate('OTP', {
+      phone: cleanPhone,
+      fullPhone,
+      verificationId,
+      countryDial: selectedCountry.dial,
+      countryFlag: selectedCountry.flag,
+      isNewUser: true,
+      returnScreen: route?.params?.returnScreen,
+      returnParams: route?.params?.returnParams,
+      action: route?.params?.action,
+      registrationPayload: {
+        fullName: fullName.trim(),
+        mobileNumber: fullPhone,
+      },
+    });
+  };
+
+  const handleRecaptchaError = (err: string) => {
+    setIsLoading(false);
+    setRecaptchaVisible(false);
+    setErrors({
+      global: err || 'Failed to send verification code. Please check your network and try again.',
+    });
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: isDark ? '#0A0F1E' : '#FFFFFF' }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#152238" />
-      <LinearGradient colors={['#152238', '#1A3050']} style={styles.topStrip} />
+    <View style={styles.screen}>
+      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent={false} />
 
       <KeyboardAvoidingView
-        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.container}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
+          ref={scrollViewRef}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingTop: Math.max(insets.top, 16) + 16,
+              paddingBottom: Math.max(insets.bottom, 24) + (isKeyboardOpen ? 120 : 24),
+            },
+          ]}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          bounces={true}
+          overScrollMode="always"
         >
-          {/* Back to Login Button */}
-          <TouchableOpacity
-            onPress={() => navigation.navigate('Login')}
-            style={styles.backBtn}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={20} color={isDark ? '#F1F5F9' : '#0B2240'} />
-            <Text style={[styles.backText, { color: isDark ? '#F1F5F9' : '#0B2240' }]}>
-              Back to Login
+          {/* Header with Logo */}
+          <View style={styles.headerSection}>
+            <Image
+              source={require('../../../../assets/logo.png')}
+              style={styles.brandLogo}
+              contentFit="contain"
+            />
+            <Text style={styles.createTitle}>Create Your Account</Text>
+            <Text style={styles.createSubtitle}>
+              Join HinchMart and get started with quick & easy access.
             </Text>
-          </TouchableOpacity>
+          </View>
 
-          <View
-            style={[
-              styles.card,
-              {
-                backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                borderColor: isDark ? '#2D3748' : '#E5E7EB',
-              },
-            ]}
-          >
-            {/* Header */}
-            <View style={styles.cardHeader}>
-              <LinearGradient
-                colors={['#0B2240', '#1A3050']}
-                style={styles.headerGradient}
+          {/* Form Card with ONLY Full Name and Mobile Number */}
+          <View style={styles.card}>
+            {/* Field 1: Full Name */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>
+                Full Name <Text style={styles.requiredAsterisk}>*</Text>
+              </Text>
+              <View
+                style={[
+                  styles.inputContainer,
+                  Boolean(errors.fullName) && styles.inputContainerError,
+                ]}
               >
-                <View style={styles.headerContent}>
-                  <View style={styles.headerIconCircle}>
-                    <Ionicons name="person-add" size={22} color="#FDB913" />
-                  </View>
-                  <Text style={styles.headerTitle}>Create Account</Text>
-                  <Text style={styles.headerSub}>
-                    Fill in all registration fields to get started
-                  </Text>
+                <View style={styles.inputIconWrap}>
+                  <Ionicons name="person-outline" size={17} color="#0038A8" />
                 </View>
-              </LinearGradient>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter your full name"
+                  placeholderTextColor="#94A3B8"
+                  value={fullName}
+                  onChangeText={(text) => {
+                    setFullName(text);
+                    if (errors.fullName) setErrors((prev) => ({ ...prev, fullName: '' }));
+                  }}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  multiline={false}
+                  numberOfLines={1}
+                />
+              </View>
+              {Boolean(errors.fullName) && (
+                <View style={styles.errorRow}>
+                  <Ionicons name="alert-circle-outline" size={13} color="#EF4444" />
+                  <Text style={styles.errorText}>{errors.fullName}</Text>
+                </View>
+              )}
             </View>
 
-            <View style={styles.formBody}>
-              {/* Error Banner */}
-              {errors.submit ? (
-                <View style={styles.errorBanner}>
-                  <Ionicons name="alert-circle" size={15} color="#EF4444" />
-                  <Text style={styles.errorBannerText}>{errors.submit}</Text>
-                </View>
-              ) : null}
-
-              {/* First Name Field */}
-              <Input
-                label="First Name *"
-                value={firstName}
-                onChangeText={(v) => {
-                  setFirstName(v);
-                  if (errors.firstName) setErrors({ ...errors, firstName: '' });
-                }}
-                placeholder="Enter your first name"
-                autoCapitalize="words"
-                error={errors.firstName}
-              />
-
-              {/* Last Name Field */}
-              <Input
-                label="Last Name *"
-                value={lastName}
-                onChangeText={(v) => {
-                  setLastName(v);
-                  if (errors.lastName) setErrors({ ...errors, lastName: '' });
-                }}
-                placeholder="Enter your last name"
-                autoCapitalize="words"
-                error={errors.lastName}
-              />
-
-              {/* Mobile Number Input */}
-              <Input
-                label="Mobile Number *"
-                value={phone}
-                onChangeText={(v) => {
-                  setPhone(v.replace(/\D/g, '').slice(0, 10));
-                  if (errors.phone) setErrors({ ...errors, phone: '' });
-                }}
-                placeholder="Enter 10-digit mobile number"
-                keyboardType="phone-pad"
-                maxLength={10}
-                error={errors.phone}
-              />
-
-              {/* Email */}
-              <Input
-                label="Email Address (Optional)"
-                value={email}
-                onChangeText={(v) => {
-                  setEmail(v);
-                  if (errors.email) setErrors({ ...errors, email: '' });
-                }}
-                placeholder="yourname@example.com"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                error={errors.email}
-              />
-
-              {/* Account Type */}
-              <View style={styles.sectionGroup}>
-                <Text style={[styles.sectionLabel, { color: isDark ? '#CBD5E1' : '#374151' }]}>
-                  Account Type *
-                </Text>
-                <View style={styles.typeGrid}>
-                  {ACCOUNT_TYPES.map((type) => {
-                    const selected = accountType === type.value;
-                    return (
-                      <TouchableOpacity
-                        key={type.value}
-                        onPress={() => handleAccountTypeChange(type.value)}
-                        activeOpacity={0.75}
-                        style={[
-                          styles.typeBtn,
-                          {
-                            backgroundColor: selected
-                              ? '#152238'
-                              : isDark
-                              ? '#0F172A'
-                              : '#F9FAFB',
-                            borderColor: selected
-                              ? '#FDB913'
-                              : isDark
-                              ? '#334155'
-                              : '#E5E7EB',
-                            borderWidth: selected ? 2 : 1,
-                          },
-                        ]}
-                      >
-                        <View
-                          style={[
-                            styles.typeIconBg,
-                            {
-                              backgroundColor: selected
-                                ? 'rgba(253, 185, 19, 0.15)'
-                                : isDark
-                                ? '#1E293B'
-                                : '#F3F4F6',
-                            },
-                          ]}
-                        >
-                          <Ionicons
-                            name={type.icon}
-                            size={18}
-                            color={selected ? '#FDB913' : isDark ? '#64748B' : '#9CA3AF'}
-                          />
-                        </View>
-                        <Text
-                          style={[
-                            styles.typeLabel,
-                            {
-                              color: selected
-                                ? '#FFFFFF'
-                                : isDark
-                                ? '#F1F5F9'
-                                : '#111827',
-                              fontFamily: selected
-                                ? 'Inter_600SemiBold'
-                                : 'Inter_500Medium',
-                            },
-                          ]}
-                        >
-                          {type.label}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.typeDesc,
-                            {
-                              color: selected
-                                ? 'rgba(255,255,255,0.6)'
-                                : isDark
-                                ? '#64748B'
-                                : '#9CA3AF',
-                            },
-                          ]}
-                        >
-                          {type.desc}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Company Name (conditional) */}
-              {needsCompany && (
-                <Input
-                  label="Company Name *"
-                  value={companyName}
-                  onChangeText={(v) => {
-                    setCompanyName(v);
-                    if (errors.companyName) setErrors({ ...errors, companyName: '' });
-                  }}
-                  placeholder="Enter your company name"
-                  autoCapitalize="words"
-                  error={errors.companyName}
-                />
-              )}
-
-              {/* Submit */}
-              <Button
-                title={isLoading ? 'Creating Account...' : 'Create Account'}
-                onPress={handleCreateAccount}
-                isLoading={isLoading}
-                disabled={isLoading}
-                size="lg"
-                variant="primary"
-                style={styles.submitBtn}
-              />
-
-              {/* Terms */}
-              <Text style={[styles.termsText, { color: isDark ? '#64748B' : '#9CA3AF' }]}>
-                By creating an account, you agree to HINCH MART's{' '}
-                <Text style={{ color: '#FDB913' }}>Terms of Service</Text>
-                {' '}and{' '}
-                <Text style={{ color: '#FDB913' }}>Privacy Policy</Text>.
+            {/* Field 2: Mobile Number with Left Country Code (+91 ▾) */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>
+                Mobile Number <Text style={styles.requiredAsterisk}>*</Text>
               </Text>
 
-              {/* Already have an account */}
-              <View style={styles.loginGroup}>
-                <Text style={[styles.loginText, { color: isDark ? '#94A3B8' : '#6B7280' }]}>
-                  Already have an account?
-                </Text>
+              <View
+                style={[
+                  styles.inputContainer,
+                  Boolean(errors.mobileNumber) && styles.inputContainerError,
+                ]}
+              >
+                {/* Left Side Country Code Picker Dropdown (+91 ▾) */}
                 <TouchableOpacity
-                  onPress={() => navigation.navigate('Login')}
-                  activeOpacity={0.7}
-                  style={styles.loginLinkContainer}
+                  onPress={() => setCountryModalVisible(true)}
+                  style={styles.countryPickerBtn}
+                  activeOpacity={0.75}
                 >
-                  <Text style={styles.loginLinkText}>Login</Text>
-                  <Ionicons name="arrow-forward" size={14} color="#F59E0B" />
+                  <Text style={styles.countryFlagText}>{selectedCountry.flag}</Text>
+                  <Text style={styles.countryDialText}>{selectedCountry.dial}</Text>
+                  <Ionicons name="chevron-down" size={13} color="#0038A8" style={{ marginLeft: 2 }} />
                 </TouchableOpacity>
+
+                <View style={styles.inputDivider} />
+
+                <TextInput
+                  style={styles.textInput}
+                  placeholder={`Enter ${selectedCountry.digits || 10}-digit mobile number`}
+                  placeholderTextColor="#94A3B8"
+                  value={mobileNumber}
+                  onChangeText={(text) => {
+                    const digits = text.replace(/[^0-9]/g, '').slice(0, selectedCountry.digits || 10);
+                    setMobileNumber(digits);
+                    if (errors.mobileNumber) setErrors((prev) => ({ ...prev, mobileNumber: '' }));
+                  }}
+                  autoCapitalize="none"
+                  keyboardType="number-pad"
+                  maxLength={selectedCountry.digits || 10}
+                  multiline={false}
+                  numberOfLines={1}
+                />
+
+                {/* Right Side Green Tick — shown once full valid mobile number is entered */}
+                {mobileNumber.length === (selectedCountry.digits || 10) && (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={20}
+                    color="#16A34A"
+                    style={styles.validTickIcon}
+                  />
+                )}
               </View>
+              {Boolean(errors.mobileNumber) && (
+                <View style={styles.errorRow}>
+                  <Ionicons name="alert-circle-outline" size={13} color="#EF4444" />
+                  <Text style={styles.errorText}>{errors.mobileNumber}</Text>
+                </View>
+              )}
+            </View>
+
+            {Boolean(errors.global) && (
+              <View style={styles.globalErrorBanner}>
+                <Ionicons name="alert-circle" size={16} color="#EF4444" />
+                <Text style={styles.globalErrorText}>{errors.global}</Text>
+              </View>
+            )}
+
+            {/* Terms & Privacy Note */}
+            <Text style={styles.termsNoticeText}>
+              By registering, you agree to our{' '}
+              <Text style={styles.termsLink}>Terms & Conditions</Text> and{' '}
+              <Text style={styles.termsLink}>Privacy Policy</Text>.
+            </Text>
+
+            {/* REGISTER Button */}
+            <TouchableOpacity
+              onPress={handleRegister}
+              style={styles.registerBtn}
+              activeOpacity={0.85}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <View style={styles.btnInnerRow}>
+                  <Text style={styles.registerBtnText}>REGISTER</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Already have an account? Login */}
+            <View style={styles.footerLinkRow}>
+              <Text style={styles.footerText}>Already have an account?</Text>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Login')}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.loginLink}>Login</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Country Selection Modal */}
+      <Modal
+        visible={countryModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCountryModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setCountryModalVisible(false)}
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Country Code</Text>
+              <TouchableOpacity
+                onPress={() => setCountryModalVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Country Input */}
+            <View style={styles.modalSearchBox}>
+              <Ionicons name="search-outline" size={16} color="#94A3B8" />
+              <TextInput
+                style={styles.modalSearchInput}
+                placeholder="Search country or code..."
+                placeholderTextColor="#94A3B8"
+                value={countrySearch}
+                onChangeText={setCountrySearch}
+              />
+            </View>
+
+            <ScrollView style={{ maxHeight: 330 }} showsVerticalScrollIndicator={false}>
+              {filteredCountries.map((item) => {
+                const isSelected = selectedCountry.dial === item.dial && selectedCountry.code === item.code;
+                return (
+                  <TouchableOpacity
+                    key={`${item.code}-${item.dial}`}
+                    onPress={() => {
+                      setSelectedCountry(item);
+                      setCountryModalVisible(false);
+                      setCountrySearch('');
+                    }}
+                    style={[
+                      styles.countryOptionRow,
+                      isSelected && styles.countryOptionRowSelected,
+                    ]}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.countryOptionLeft}>
+                      <Text style={styles.countryOptionFlag}>{item.flag}</Text>
+                      <Text style={styles.countryOptionName}>{item.name}</Text>
+                    </View>
+                    <View style={styles.countryOptionRight}>
+                      <Text style={styles.countryOptionDial}>{item.dial}</Text>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={18} color="#0038A8" style={{ marginLeft: 6 }} />
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Native Mobile Firebase Phone Auth Recaptcha Modal */}
+      {recaptchaVisible && (
+        <FirebaseRecaptchaModal
+          visible={recaptchaVisible}
+          phoneNumber={`${selectedCountry.dial}${mobileNumber.replace(/[^0-9]/g, '')}`}
+          onSuccess={handleRecaptchaSuccess}
+          onError={handleRecaptchaError}
+          onClose={() => {
+            setIsLoading(false);
+            setRecaptchaVisible(false);
+          }}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  flex: { flex: 1 },
-  topStrip: { height: 6 },
+  screen: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  container: {
+    flex: 1,
+  },
   scrollContent: {
     flexGrow: 1,
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 40,
-  },
-  backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    width: '100%',
-    maxWidth: 480,
-    marginBottom: 16,
-    paddingVertical: 4,
-  },
-  backText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-  },
-  card: {
-    width: '100%',
-    maxWidth: 480,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    marginBottom: 24,
-    ...Platform.select({
-      ios: { shadowColor: '#0F172A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16 },
-      android: { elevation: 4 },
-    }),
-  },
-  cardHeader: {
-    overflow: 'hidden',
-  },
-  headerGradient: {
-    paddingHorizontal: 24,
-    paddingVertical: 22,
-  },
-  headerContent: {
-    alignItems: 'flex-start',
-    gap: 6,
-  },
-  headerIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(253, 185, 19, 0.15)',
     justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  headerSection: {
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 16,
   },
-  headerTitle: {
+  brandLogo: {
+    width: 140,
+    height: 85,
+    marginBottom: 6,
+  },
+  createTitle: {
     fontFamily: 'Poppins_700Bold',
-    fontSize: 22,
-    color: '#FFFFFF',
-    marginTop: 2,
+    fontSize: 24,
+    color: '#0F172A',
+    textAlign: 'center',
   },
-  headerSub: {
+  createSubtitle: {
     fontFamily: 'Inter_400Regular',
     fontSize: 13,
-    color: 'rgba(255,255,255,0.7)',
+    color: '#475569',
+    textAlign: 'center',
+    maxWidth: 320,
+    marginTop: 4,
   },
-  formBody: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    paddingHorizontal: 20,
+    paddingTop: 24,
     paddingBottom: 24,
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+    ...(Platform.OS === 'ios'
+      ? {
+          shadowColor: '#0F172A',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.1,
+          shadowRadius: 20,
+        }
+      : { elevation: 6 }),
   },
-  verifiedPhoneRow: {
+  fieldGroup: {
+    marginBottom: 16,
+  },
+  fieldLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: '#1E293B',
+    marginBottom: 6,
+  },
+  requiredAsterisk: {
+    color: '#EF4444',
+  },
+  inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 20,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    height: 48,
+    overflow: 'hidden',
   },
-  verifiedLabel: {
+  inputContainerError: {
+    borderColor: '#EF4444',
+  },
+  countryPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: '100%',
+    paddingHorizontal: 10,
+    backgroundColor: '#EEF4FF',
+  },
+  countryFlagText: {
+    fontSize: 16,
+    marginRight: 4,
+  },
+  countryDialText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: '#0038A8',
+  },
+  inputDivider: {
+    width: 1,
+    height: '100%',
+    backgroundColor: '#CBD5E1',
+  },
+  inputIconWrap: {
+    width: 44,
+    height: '100%',
+    backgroundColor: '#EEF4FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#E2E8F0',
+  },
+  textInput: {
+    flex: 1,
+    height: '100%',
+    paddingHorizontal: 12,
+    paddingVertical: 0,
     fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-    marginBottom: 2,
+    fontSize: 13.5,
+    color: '#0F172A',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
-  verifiedPhone: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 15,
-  },
-  verifiedBadge: {
+  errorRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(16,185,129,0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
+    marginTop: 5,
   },
-  verifiedBadgeText: {
-    fontFamily: 'Inter_600SemiBold',
+  errorText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11.5,
+    color: '#EF4444',
+  },
+  validTickIcon: {
+    marginRight: 12,
+  },
+  termsNoticeText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
     fontSize: 12,
-    color: '#10B981',
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+    marginTop: 4,
   },
-  errorBanner: {
+  termsLink: {
+    color: '#B45309',
+    fontWeight: '600',
+  },
+  globalErrorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(239,68,68,0.08)',
-    borderRadius: 10,
+    backgroundColor: '#FEE2E2',
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
-    marginBottom: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+    gap: 6,
   },
-  errorBannerText: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 13,
+  globalErrorText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 12,
     color: '#EF4444',
     flex: 1,
   },
-  sectionGroup: { marginBottom: 20 },
-  sectionLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    marginBottom: 12,
+  registerBtn: {
+    backgroundColor: '#E31E24',
+    borderRadius: 8,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  typeGrid: {
+  btnInnerRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
+    alignItems: 'center',
+    gap: 8,
   },
-  typeBtn: {
-    width: '47%',
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'flex-start',
-    gap: 6,
+  registerBtnText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    fontSize: 14,
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
-  typeIconBg: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+  footerLinkRow: {
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 18,
+    gap: 5,
+  },
+  footerText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 12.5,
+    color: '#64748B',
+  },
+  loginLink: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    fontSize: 12.5,
+    color: '#E31E24',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    width: '100%',
+    maxWidth: 380,
+    padding: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingBottom: 8,
+  },
+  modalTitle: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    fontSize: 15,
+    color: '#0F172A',
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 38,
+    marginBottom: 8,
+    gap: 6,
+  },
+  modalSearchInput: {
+    flex: 1,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 12.5,
+    color: '#0F172A',
+  },
+  countryOptionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 6,
     marginBottom: 2,
   },
-  typeLabel: {
-    fontSize: 14,
+  countryOptionRowSelected: {
+    backgroundColor: '#FEF2F2',
   },
-  typeDesc: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 11,
-  },
-  submitBtn: {
-    marginTop: 8,
-    marginBottom: 14,
-  },
-  termsText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 18,
-  },
-  loginGroup: {
+  countryOptionLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 8,
+    gap: 10,
   },
-  loginText: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
+  countryOptionFlag: {
+    fontSize: 18,
   },
-  loginLinkContainer: {
+  countryOptionName: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+    fontSize: 13,
+    color: '#334155',
+  },
+  countryOptionRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
   },
-  loginLinkText: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 14,
-    color: '#F59E0B',
+  countryOptionDial: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '600',
+    fontSize: 12.5,
+    color: '#152238',
   },
 });
-
-export default RegistrationDetailsScreen;

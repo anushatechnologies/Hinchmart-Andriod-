@@ -23,10 +23,23 @@ try {
 } catch {
   // Fallback for Expo Go or environments where MMKV native C++ binary isn't present
   const inMemory = new Map<string, string>();
+
+  // Asynchronously hydrate inMemory from AsyncStorage on startup
+  AsyncStorage.getAllKeys().then((keys) => {
+    if (keys && keys.length > 0) {
+      AsyncStorage.multiGet(keys).then((pairs) => {
+        pairs.forEach(([k, v]) => {
+          if (v != null) inMemory.set(k, v);
+        });
+      }).catch(() => {});
+    }
+  }).catch(() => {});
+
   storageInstance = {
     getString: (key: string) => inMemory.get(key) ?? null,
     set: (key: string, value: string | number | boolean) => {
       inMemory.set(key, String(value));
+      AsyncStorage.setItem(key, String(value)).catch(() => {});
     },
     getNumber: (key: string) => {
       const v = inMemory.get(key);
@@ -38,10 +51,12 @@ try {
     },
     delete: (key: string) => {
       inMemory.delete(key);
+      AsyncStorage.removeItem(key).catch(() => {});
     },
     contains: (key: string) => inMemory.has(key),
     clearAll: () => {
       inMemory.clear();
+      AsyncStorage.clear().catch(() => {});
     },
     getAllKeys: () => Array.from(inMemory.keys()),
   };

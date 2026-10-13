@@ -1,10 +1,9 @@
 /**
- * HINCH MART — Premium Card Component
- * Enhanced with glassmorphic variant, refined shadows, and smooth press animations
+ * HINCH MART — Clean Modern Card Component
+ * Standardized 8px border radius, subtle borders, crisp shadow presets
  */
 import React from 'react';
 import { TouchableOpacity, View, ViewStyle, StyleSheet, StyleProp, Platform } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTheme, Shadow } from '../../theme';
 
 export interface CardProps {
@@ -15,80 +14,62 @@ export interface CardProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
-
 export function Card({
   children,
   onPress,
-  variant = 'elevated',
+  variant = 'outlined',
   shadowPreset = 'card',
   style,
 }: CardProps) {
   const { theme, isDark } = useTheme();
-  const scale = useSharedValue(1);
-
-  const handlePressIn = () => {
-    if (onPress) {
-      scale.value = withSpring(0.975, { damping: 18, stiffness: 280 });
-    }
-  };
-
-  const handlePressOut = () => {
-    if (onPress) {
-      scale.value = withSpring(1, { damping: 18, stiffness: 280 });
-    }
-  };
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
 
   const getVariantStyle = (): ViewStyle => {
     switch (variant) {
       case 'elevated':
         return {
-          backgroundColor: theme.colors.cardBackground,
-          ...theme.shadows[shadowPreset],
-          ...(Platform.OS === 'android' ? { elevation: 3 } : {}),
+          backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+          borderWidth: 1,
+          borderColor: isDark ? '#334155' : '#F1F5F9',
+          ...Platform.select({
+            ios: {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: isDark ? 0.2 : 0.04,
+              shadowRadius: 6,
+            },
+            android: { elevation: 2 },
+          }),
         };
       case 'outlined':
         return {
-          backgroundColor: theme.colors.cardBackground,
+          backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
           borderWidth: 1,
-          borderColor: theme.colors.cardBorder,
+          borderColor: isDark ? '#334155' : '#E2E8F0',
         };
       case 'filled':
         return {
-          backgroundColor: theme.colors.surfaceVariant,
+          backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
+          borderWidth: 1,
+          borderColor: isDark ? '#334155' : '#E2E8F0',
         };
       case 'glassmorphic':
         return {
-          backgroundColor: isDark ? 'rgba(22, 27, 34, 0.75)' : 'rgba(255, 255, 255, 0.82)',
+          backgroundColor: isDark ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.95)',
           borderWidth: 1,
-          borderColor: isDark ? 'rgba(48, 54, 61, 0.5)' : 'rgba(255, 255, 255, 0.6)',
-          ...(Platform.OS === 'ios'
-            ? {
-                shadowColor: isDark ? '#000' : '#0F172A',
-                shadowOffset: { width: 0, height: 6 },
-                shadowOpacity: isDark ? 0.3 : 0.08,
-                shadowRadius: 16,
-              }
-            : { elevation: 4 }),
+          borderColor: isDark ? '#334155' : '#E2E8F0',
         };
     }
   };
 
   if (onPress) {
     return (
-      <AnimatedTouchableOpacity
+      <TouchableOpacity
         onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={0.9}
-        style={[styles.base, getVariantStyle(), animatedStyle, style]}
+        activeOpacity={0.82}
+        style={[styles.base, getVariantStyle(), style]}
       >
         {children}
-      </AnimatedTouchableOpacity>
+      </TouchableOpacity>
     );
   }
 
@@ -97,7 +78,7 @@ export function Card({
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 8,
+    padding: 12,
   },
 });

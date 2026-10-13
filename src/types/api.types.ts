@@ -29,6 +29,8 @@ export interface ApiError {
   success: false;
   message: string;
   statusCode: number;
+  status?: number;
+  response?: any;
   errors?: Record<string, string[]>;
 }
 

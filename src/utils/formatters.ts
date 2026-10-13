@@ -22,20 +22,27 @@ const CURRENCY_RATES: Record<string, number> = {
 
 /**
  * Format price with active selected currency symbol & rate
+ * All backend prices and amounts are fundamentally in INR.
  */
-export function formatPrice(amount: number, baseCurrency = 'USD'): string {
+export function formatPrice(amount: number | string | undefined | null, baseCurrency = 'INR'): string {
+  if (amount === undefined || amount === null || isNaN(Number(amount))) {
+    return '₹0';
+  }
+  const numericAmount = Number(amount);
   const activeCurrencyCode = mmkvStorage.getString(STORAGE_KEYS.CURRENCY) || 'INR';
   const currencyInfo = SUPPORTED_CURRENCIES.find((c) => c.code === activeCurrencyCode);
   const symbol = currencyInfo?.symbol ?? '₹';
 
-  const baseRate = CURRENCY_RATES[baseCurrency] ?? 1;
+  const baseRate = CURRENCY_RATES[baseCurrency] ?? 83.5;
   const targetRate = CURRENCY_RATES[activeCurrencyCode] ?? 83.5;
-  const convertedAmount = amount * (targetRate / baseRate);
+  const convertedAmount = numericAmount * (targetRate / baseRate);
 
-  const formattedNum = convertedAmount.toLocaleString('en-IN', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
+  const formattedNum = Number.isFinite(convertedAmount)
+    ? convertedAmount.toLocaleString('en-IN', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      })
+    : '0';
 
   return `${symbol}${formattedNum}`;
 }
