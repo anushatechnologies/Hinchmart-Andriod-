@@ -627,21 +627,32 @@ export function ProductDetailScreen({ route, navigation }: any) {
       Alert.alert('Out of Stock', 'This product is currently out of stock.');
       return;
     }
-    if (cartQuantity === 0) {
-      const prodStoreId = (passedProduct as any)?.storeId;
-      const res = await cartManager.addToCart(
-        dispatch,
-        passedProduct,
-        quantity,
-        prodStoreId,
-        navigation,
-        'ProductDetail',
-        route?.params
-      );
-      if (res?.success) {
-        navigation.navigate('Cart');
+    if (quantity < moq) {
+      setToastMessage(`Minimum order quantity is ${moq} ${unit}${moq > 1 ? 's' : ''}`);
+      setTimeout(() => setToastMessage(null), 2500);
+      return;
+    }
+
+    try {
+      if (cartQuantity === 0) {
+        const prodStoreId = (passedProduct as any)?.storeId;
+        const res = await cartManager.addToCart(
+          dispatch,
+          passedProduct,
+          quantity,
+          prodStoreId,
+          navigation,
+          'ProductDetail',
+          route?.params
+        );
+        if (res?.requiresAuth) {
+          return;
+        }
+      } else if (quantity !== cartQuantity) {
+        await cartManager.setQuantity(dispatch, passedProduct, quantity, cartItem, moq);
       }
-    } else {
+      navigation.navigate('CheckoutAddress');
+    } catch {
       navigation.navigate('Cart');
     }
   };
@@ -777,7 +788,7 @@ export function ProductDetailScreen({ route, navigation }: any) {
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 20) + 95 }}
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 28) }}
       >
         {/* ── High-Res Centered Product Image Gallery ── */}
         <View style={[styles.imageGalleryContainer, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderBottomColor: isDark ? '#334155' : '#E2E8F0' }]}>
@@ -1187,20 +1198,26 @@ export function ProductDetailScreen({ route, navigation }: any) {
                     ₹{formatINR(orderTotal)}
                   </Text>
                 </Text>
+                {totalSavings > 0 && (
+                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 11, color: '#16A34A', marginTop: 3 }}>
+                    Saved ₹{formatINR(totalSavings)}
+                  </Text>
+                )}
               </View>
             </View>
 
-            {/* Amazon Yellow Button: Add to Cart */}
+            {/* Action Button 1: Add to Cart / View in Cart (Brand Crimson Red) */}
             <TouchableOpacity
               onPress={handleAddToCart}
               disabled={!isInStock || quantity < 1}
               style={[
-                styles.amazonYellowBtn,
-                (!isInStock || quantity < 1) && styles.amazonBtnDisabled,
+                styles.primaryCartBtn,
+                (!isInStock || quantity < 1) && styles.actionBtnDisabled,
               ]}
               activeOpacity={0.85}
             >
-              <Text style={styles.amazonYellowBtnText}>
+              <Ionicons name="cart" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.primaryCartBtnText}>
                 {!isInStock
                   ? 'Out of Stock'
                   : cartQuantity > 0
@@ -1209,17 +1226,19 @@ export function ProductDetailScreen({ route, navigation }: any) {
               </Text>
             </TouchableOpacity>
 
-            {/* Amazon Orange Button: Buy Now */}
+            {/* Action Button 2: Buy Now (Dark Slate Navy / Instant Checkout) */}
             <TouchableOpacity
               onPress={handleBuyNow}
               disabled={!isInStock || quantity < 1}
               style={[
-                styles.amazonOrangeBtn,
-                (!isInStock || quantity < 1) && styles.amazonBtnDisabled,
+                styles.primaryBuyNowBtn,
+                isDark && { backgroundColor: '#334155', borderColor: '#475569' },
+                (!isInStock || quantity < 1) && styles.actionBtnDisabled,
               ]}
               activeOpacity={0.85}
             >
-              <Text style={styles.amazonOrangeBtnText}>
+              <Ionicons name="flash" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.primaryBuyNowBtnText}>
                 Buy Now
               </Text>
             </TouchableOpacity>
@@ -1464,14 +1483,19 @@ export function ProductDetailScreen({ route, navigation }: any) {
                   );
                   const rawRelUnit = String(relItem.unit || '').trim();
                   const relUnit = !rawRelUnit || rawRelUnit.toLowerCase() === 'default' ? 'unit' : rawRelUnit;
-                  const relCartQty = cartQuantityMap[relId] || 0;
                   const relCartItem = cartItems?.find(
                     (ci: any) =>
                       String(ci.productId || '') === relId ||
                       String(ci.id || '') === relId ||
                       String(ci.id || '') === `${relId}_default` ||
-                      (ci.id && String(ci.id).startsWith(`${relId}_`))
+                      (ci.id && String(ci.id).startsWith(`${relId}_`)) ||
+                      (ci.product && String(ci.product.id || '') === relId)
                   );
+                  const relCartQty =
+                    cartQuantityMap[relId] ||
+                    cartQuantityMap[String((relItem as any)?.productId || '')] ||
+                    Number(relCartItem?.quantity) ||
+                    0;
 
                   return (
                     <TouchableOpacity
@@ -1528,7 +1552,7 @@ export function ProductDetailScreen({ route, navigation }: any) {
                           </Text>
                         )}
 
-                        {/* Synchronized Cart Action */}
+                        {/* Synchronized Cart Action with UI Color and Quantity Stepper */}
                         {relCartQty > 0 ? (
                           <View style={styles.amazonRelStepperRow}>
                             <TouchableOpacity
@@ -1539,14 +1563,17 @@ export function ProductDetailScreen({ route, navigation }: any) {
                                   relItem,
                                   relCartQty,
                                   relCartItem,
-                                  relItem.moq || 1
+                                  relItem.moq || 1,
+                                  navigation,
+                                  'ProductDetail',
+                                  route?.params
                                 );
                               }}
                               activeOpacity={0.7}
                               style={styles.amazonRelStepperBtn}
                               hitSlop={{ top: 8, bottom: 8, left: 6, right: 3 }}
                             >
-                              <Ionicons name="remove" size={13} color="#0F1111" />
+                              <Ionicons name="remove" size={14} color="#FFFFFF" />
                             </TouchableOpacity>
                             <Text style={styles.amazonRelStepperQty}>{relCartQty}</Text>
                             <TouchableOpacity
@@ -1556,30 +1583,42 @@ export function ProductDetailScreen({ route, navigation }: any) {
                                   dispatch,
                                   relItem,
                                   relCartQty,
-                                  relCartItem
+                                  relCartItem,
+                                  navigation,
+                                  'ProductDetail',
+                                  route?.params
                                 );
                               }}
                               activeOpacity={0.7}
                               style={styles.amazonRelStepperBtn}
                               hitSlop={{ top: 8, bottom: 8, left: 3, right: 6 }}
                             >
-                              <Ionicons name="add" size={13} color="#0F1111" />
+                              <Ionicons name="add" size={14} color="#FFFFFF" />
                             </TouchableOpacity>
                           </View>
                         ) : (
                           <TouchableOpacity
-                            onPress={(e) => {
+                            onPress={async (e) => {
                               e?.stopPropagation?.();
-                              cartManager.addToCart(
+                              const targetAddQty = typeof relItem.moq === 'number' && relItem.moq > 1 ? relItem.moq : 1;
+                              const res = await cartManager.addToCart(
                                 dispatch,
                                 relItem,
-                                1,
-                                (relItem as any)?.storeId
+                                targetAddQty,
+                                (relItem as any)?.storeId,
+                                navigation,
+                                'ProductDetail',
+                                route?.params
                               );
+                              if (res?.success) {
+                                setToastMessage(`Added ${relTitle} to Cart`);
+                                setTimeout(() => setToastMessage(null), 2500);
+                              }
                             }}
                             activeOpacity={0.8}
                             style={styles.amazonRelAddBtn}
                           >
+                            <Ionicons name="cart-outline" size={13} color="#FFFFFF" style={{ marginRight: 3 }} />
                             <Text style={styles.amazonRelAddText}>Add to Cart</Text>
                           </TouchableOpacity>
                         )}
@@ -1759,50 +1798,7 @@ export function ProductDetailScreen({ route, navigation }: any) {
         </View>
       </ScrollView>
 
-      {/* ── Sticky Bottom Action Bar ── */}
-      <View style={[styles.stickyBottomBar, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderTopColor: isDark ? '#334155' : '#E2E8F0', paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <View style={styles.bottomPriceCol}>
-          <Text style={[styles.bottomTotalLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-            Total ({quantity} {unit}{quantity > 1 ? 's' : ''}):
-          </Text>
-          <Text style={[styles.bottomTotalAmount, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
-            ₹{formatINR(orderTotal)}
-          </Text>
-          {totalSavings > 0 && (
-            <Text style={styles.bottomSavedTag}>Saved ₹{formatINR(totalSavings)}</Text>
-          )}
-        </View>
 
-        <View style={styles.bottomActionsGroup}>
-          <TouchableOpacity
-            onPress={handleOpenRFQ}
-            style={[styles.bottomRfqBtn, { borderColor: '#E31E24', backgroundColor: isDark ? 'transparent' : '#FEF2F2' }]}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="document-text-outline" size={17} color="#E31E24" />
-            <Text style={[styles.bottomRfqBtnText, { color: '#E31E24' }]}>RFQ</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={handleAddToCart}
-            disabled={!isInStock || quantity < 1}
-            style={[
-              styles.bottomAddToCartBtn,
-              (!isInStock || quantity < 1) && styles.bottomAddToCartBtnDisabled,
-            ]}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="cart" size={17} color="#FFFFFF" />
-            <Text style={styles.bottomAddToCartBtnText}>
-              {!isInStock
-                ? 'Out of Stock'
-                : cartQuantity > 0
-                ? (quantity !== cartQuantity ? 'Update Cart' : 'View in Cart')
-                : 'Add to Cart'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
 
       {/* ── Write Review Modal ── */}
       <Modal
@@ -2535,40 +2531,55 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
   },
-  amazonYellowBtn: {
-    backgroundColor: '#FFD814',
-    borderColor: '#FCD200',
+  primaryCartBtn: {
+    backgroundColor: '#E31E24',
+    borderColor: '#C4181D',
     borderWidth: 1,
-    borderRadius: 20,
-    height: 42,
+    borderRadius: 8,
+    height: 44,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 12,
+    shadowColor: '#E31E24',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  amazonYellowBtnText: {
+  primaryCartBtnText: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 13.5,
-    color: '#0F1111',
+    fontSize: 14,
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
   },
-  amazonOrangeBtn: {
-    backgroundColor: '#FFA41C',
-    borderColor: '#FF8F00',
+  primaryBuyNowBtn: {
+    backgroundColor: '#1E293B',
+    borderColor: '#0F172A',
     borderWidth: 1,
-    borderRadius: 20,
-    height: 42,
+    borderRadius: 8,
+    height: 44,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  amazonOrangeBtnText: {
+  primaryBuyNowBtnText: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 13.5,
-    color: '#0F1111',
+    fontSize: 14,
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
   },
-  amazonBtnDisabled: {
-    backgroundColor: '#E0E0E0',
-    borderColor: '#D0D0D0',
+  actionBtnDisabled: {
+    backgroundColor: '#94A3B8',
+    borderColor: '#64748B',
     opacity: 0.6,
+    elevation: 0,
   },
   amazonRfqBtn: {
     flexDirection: 'row',
@@ -2850,108 +2861,50 @@ const styles = StyleSheet.create({
   },
   amazonRelAddBtn: {
     marginTop: 8,
-    backgroundColor: '#FFD814',
-    borderColor: '#FCD200',
-    borderWidth: 1,
-    paddingVertical: 5,
-    borderRadius: 14,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#E31E24',
+    borderColor: '#C4181D',
+    borderWidth: 1,
+    paddingVertical: 6,
+    borderRadius: 8,
+    shadowColor: '#E31E24',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   amazonRelAddText: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 11,
-    color: '#0F1111',
+    fontSize: 11.5,
+    color: '#FFFFFF',
   },
   amazonRelStepperRow: {
     marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F0F2F2',
-    borderColor: '#D5D9D9',
+    backgroundColor: '#E31E24',
+    borderColor: '#C4181D',
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 6,
-    height: 28,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    height: 30,
+    shadowColor: '#E31E24',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   amazonRelStepperBtn: {
     padding: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   amazonRelStepperQty: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 11.5,
-    color: '#0F1111',
-  },
-
-  /* ── Sticky Bottom Bar ── */
-  stickyBottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTopWidth: 1,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-  },
-  bottomPriceCol: {
-    flex: 1,
-  },
-  bottomTotalLabel: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 11,
-  },
-  bottomTotalAmount: {
-    fontFamily: 'Poppins_700Bold',
-    fontSize: 18,
-    marginTop: 1,
-  },
-  bottomSavedTag: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 10,
-    color: '#16A34A',
-  },
-  bottomActionsGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  bottomRfqBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: 1,
-    borderRadius: 8,
-    height: 42,
-    paddingHorizontal: 14,
-  },
-  bottomRfqBtnText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 12.5,
-  },
-  bottomAddToCartBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#E31E24',
-    borderRadius: 8,
-    height: 42,
-    paddingHorizontal: 18,
-  },
-  bottomAddToCartBtnDisabled: {
-    backgroundColor: '#94A3B8',
-  },
-  bottomAddToCartBtnText: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 13,
+    fontSize: 12,
     color: '#FFFFFF',
   },
 });
