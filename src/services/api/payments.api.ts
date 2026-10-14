@@ -11,6 +11,7 @@
  */
 import apiClient, { unwrapApiResponse } from './client';
 import { API_ENDPOINTS } from '../../constants/api';
+import { sanitizePhoneNumber } from '../../utils';
 import {
   PaymentOrderRequest,
   PaymentOrderResponse,
@@ -30,9 +31,17 @@ export const paymentsApi = {
   createPaymentOrder: async (
     payload: PaymentOrderRequest
   ): Promise<PaymentOrderResponse> => {
+    const rawUserPhone = (payload as any).customerPhone || (payload as any).phone || '';
+    const cleanUserPhone = sanitizePhoneNumber(rawUserPhone);
+    const cleanRecipientPhone = sanitizePhoneNumber(payload.recipientPhone);
+
     const body: Record<string, any> = {
       purpose: payload.purpose || (payload.orderId ? 'ORDER_PAYMENT' : 'CHECKOUT'),
     };
+    if (cleanUserPhone) {
+      body.customerPhone = cleanUserPhone;
+      body.phone = cleanUserPhone;
+    }
     if (payload.addressId !== undefined) {
       body.addressId = Number(payload.addressId) || payload.addressId;
     }
@@ -54,7 +63,9 @@ export const paymentsApi = {
     if (payload.orderForSomeoneElse) {
       body.orderForSomeoneElse = true;
       body.recipientName = payload.recipientName;
-      body.recipientPhone = payload.recipientPhone;
+      body.recipientPhone = cleanRecipientPhone || cleanUserPhone;
+    } else if (cleanUserPhone) {
+      body.recipientPhone = cleanUserPhone;
     }
     if (payload.notes) {
       body.notes = payload.notes;

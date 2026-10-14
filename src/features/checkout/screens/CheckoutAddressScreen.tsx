@@ -47,7 +47,7 @@ import {
   selectCartSubtotal,
   setServerCart,
 } from '../../../redux/slices/cartSlice';
-import { formatPrice } from '../../../utils';
+import { formatPrice, sanitizePhoneNumber } from '../../../utils';
 import { ordersApi } from '../../../services/api/orders.api';
 import { cartApi } from '../../../services/api/cart.api';
 import { addressesApi } from '../../../services/api/addresses.api';
@@ -363,12 +363,20 @@ export function CheckoutAddressScreen({ navigation }: any) {
 
     const u = authStore.getUser();
     let finalRecipient = newRecipientName.trim() || u?.fullName || (u as any)?.name || 'Customer';
-    let finalPhone = newPhone.trim() || u?.phone || (u as any)?.phoneNumber || '';
+    let finalPhone = sanitizePhoneNumber(newPhone.trim() || u?.phone || (u as any)?.phoneNumber || '');
 
     if (!finalRecipient || !finalPhone) {
       Alert.alert(
         'Customer Details Required',
         'Please enter your full name and contact phone number for delivery dispatch.'
+      );
+      return;
+    }
+
+    if (finalPhone.length !== 10 || !/^[6-9]\d{9}$/.test(finalPhone)) {
+      Alert.alert(
+        'Invalid Mobile Number',
+        'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.'
       );
       return;
     }
@@ -452,12 +460,11 @@ export function CheckoutAddressScreen({ navigation }: any) {
 
       // Ensure customer details exist with recipient contact in backend database table `customers`
       if (finalPhone) {
-        const recPhone = finalPhone.startsWith('+') ? finalPhone : `+91${finalPhone.replace(/[^0-9]/g, '')}`;
         customersApi
           .createCustomer({
             name: finalRecipient,
-            phone: recPhone,
-            email: u?.email || `${finalPhone.replace(/[^0-9]/g, '')}@customer.hinchmart.com`,
+            phone: finalPhone,
+            email: u?.email || `${finalPhone}@customer.hinchmart.com`,
           })
           .catch(() => {});
       }
@@ -1110,9 +1117,10 @@ export function CheckoutAddressScreen({ navigation }: any) {
                   </Text>
                   <TextInput
                     value={newPhone}
-                    onChangeText={setNewPhone}
+                    onChangeText={(text) => setNewPhone(text.replace(/[^0-9]/g, '').slice(0, 10))}
                     placeholder="e.g. 9876543210"
-                    keyboardType="phone-pad"
+                    keyboardType="number-pad"
+                    maxLength={10}
                     placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
                     style={{
                       backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
@@ -1494,6 +1502,8 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
 
       const currentUser = authStore.getUser();
       const payableAmount = total;
+      const cleanUserPhone = sanitizePhoneNumber(currentUser?.phone || authStore.getUser()?.phone);
+      const cleanRecipientPhone = sanitizePhoneNumber(recipientPhone);
 
       // Validate Order for Someone Else (Backend V20 Migration & Contract)
       if (orderForSomeoneElse) {
@@ -1505,14 +1515,32 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
           setIsProcessing(false);
           return;
         }
-        if (!recipientPhone.trim() || recipientPhone.trim().replace(/[^0-9]/g, '').length < 8) {
+        if (!cleanRecipientPhone || cleanRecipientPhone.length !== 10 || !/^[6-9]\d{9}$/.test(cleanRecipientPhone)) {
           Alert.alert(
-            'Recipient Contact Required',
-            'Please enter a valid mobile number for the recipient so our delivery partner can coordinate upon arrival.'
+            'Valid Recipient Mobile Required',
+            'Please enter a valid 10-digit mobile number starting with 6, 7, 8, or 9 for the recipient.'
           );
           setIsProcessing(false);
           return;
         }
+      }
+
+      // Proactively fix backend address record in database if it currently has dirty/oversized phone (> 20 chars)
+      if (resolvedAddressId && !isNaN(resolvedAddressId) && resolvedAddressId > 0) {
+        try {
+          const liveAddrs = await addressesApi.getAddresses();
+          const targetAddr = liveAddrs.find((a: any) => Number(a.addressId || a.id) === resolvedAddressId);
+          if (targetAddr && targetAddr.phone) {
+            const rawP = String(targetAddr.phone);
+            if (rawP.length > 20 || rawP.includes('(') || !/^\d{10}$/.test(rawP)) {
+              const fixedPhone = sanitizePhoneNumber(rawP) || cleanUserPhone || '9999999999';
+              await addressesApi.updateAddress(resolvedAddressId, {
+                ...targetAddr,
+                phone: fixedPhone,
+              }).catch(() => {});
+            }
+          }
+        } catch {}
       }
 
       if (selectedMethod === 'razorpay') {
@@ -1528,7 +1556,9 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
             purpose: 'CHECKOUT',
             orderForSomeoneElse: orderForSomeoneElse,
             recipientName: orderForSomeoneElse ? recipientName.trim() : undefined,
-            recipientPhone: orderForSomeoneElse ? recipientPhone.trim() : undefined,
+            recipientPhone: orderForSomeoneElse ? cleanRecipientPhone : (cleanUserPhone || undefined),
+            phone: cleanUserPhone || undefined,
+            customerPhone: cleanUserPhone || undefined,
             notes: orderForSomeoneElse ? (deliveryNotes.trim() || undefined) : undefined,
           });
         } catch (payErr: any) {
@@ -1600,8 +1630,8 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
             : (payOrder.customerName || currentUser?.fullName || 'Customer'),
           customerEmail: payOrder.customerEmail || currentUser?.email || 'customer@hinchmart.com',
           customerPhone: orderForSomeoneElse
-            ? recipientPhone.trim()
-            : (payOrder.customerPhone || currentUser?.phone || '9999999999'),
+            ? cleanRecipientPhone || '9999999999'
+            : (cleanUserPhone || sanitizePhoneNumber(payOrder.customerPhone) || '9999999999'),
           description: payOrder.description || `HinchMart Order (${cartItems.length} items)`,
         });
         setRazorpayModalVisible(true);
@@ -1619,7 +1649,9 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
             requiresCraneUnloading: false,
             orderForSomeoneElse: orderForSomeoneElse,
             recipientName: orderForSomeoneElse ? recipientName.trim() : undefined,
-            recipientPhone: orderForSomeoneElse ? recipientPhone.trim() : undefined,
+            recipientPhone: orderForSomeoneElse ? cleanRecipientPhone : (cleanUserPhone || undefined),
+            phone: cleanUserPhone || undefined,
+            customerPhone: cleanUserPhone || undefined,
             notes: deliveryNotes.trim() || undefined,
           });
         } catch (placeErr: any) {
@@ -2024,14 +2056,17 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
                   <Ionicons name="call-outline" size={17} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
                   <TextInput
                     value={recipientPhone}
-                    onChangeText={setRecipientPhone}
-                    placeholder="e.g. +919876543210"
+                    onChangeText={(text) => setRecipientPhone(text.replace(/[^0-9]/g, '').slice(0, 10))}
+                    placeholder="e.g. 9876543210"
                     placeholderTextColor={theme.colors.textTertiary}
                     style={[styles.recipientInputText, { color: theme.colors.textPrimary }]}
-                    keyboardType="phone-pad"
-                    maxLength={15}
+                    keyboardType="number-pad"
+                    maxLength={10}
                   />
                 </View>
+                <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: theme.colors.textTertiary, marginTop: 4, marginLeft: 2 }}>
+                  Enter valid 10-digit Indian mobile number
+                </Text>
               </View>
 
               <View style={styles.inputFieldBlock}>

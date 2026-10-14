@@ -52,6 +52,7 @@ import {
   customerAddressToDeliverySite,
 } from '../../../components/ui/LocationPickerModal';
 import { authStore } from '../../../store/authStore';
+import { sanitizePhoneNumber } from '../../../utils';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -264,13 +265,18 @@ export function AddressesScreen({ navigation }: any) {
 
     const user = authStore.getUser();
     let finalRecipient = recipientName.trim() || user?.fullName || (user as any)?.name || 'Customer';
-    let finalPhone = phone.trim() || user?.phone || (user as any)?.phoneNumber || '';
+    let finalPhone = sanitizePhoneNumber(phone.trim() || user?.phone || (user as any)?.phoneNumber || '');
 
     if (!finalRecipient || !finalPhone) {
       Alert.alert(
         'Customer Details Required',
         'Please enter your full name and contact phone number for delivery dispatch.'
       );
+      return;
+    }
+
+    if (finalPhone.length !== 10 || !/^[6-9]\d{9}$/.test(finalPhone)) {
+      Alert.alert('Invalid Mobile Number', 'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.');
       return;
     }
 
@@ -1020,9 +1026,10 @@ export function AddressesScreen({ navigation }: any) {
                 </Text>
                 <TextInput
                   value={phone}
-                  onChangeText={setPhone}
+                  onChangeText={(text) => setPhone(text.replace(/[^0-9]/g, '').slice(0, 10))}
                   placeholder="e.g. 9876543210"
-                  keyboardType="phone-pad"
+                  keyboardType="number-pad"
+                  maxLength={10}
                   placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
                   style={[
                     styles.fieldInput,

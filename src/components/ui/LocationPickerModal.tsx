@@ -45,6 +45,7 @@ import { addressesApi } from '../../services/api/addresses.api';
 import { userApi } from '../../services/api/user.api';
 import { authStore } from '../../store/authStore';
 import { CustomerAddress } from '../../types/location.types';
+import { sanitizePhoneNumber } from '../../utils';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -935,7 +936,7 @@ export function LocationPickerModal({
       authStore.getUser()?.fullName ||
       (authStore.getUser() as any)?.name ||
       finalTitle;
-    const finalPhone = customSupervisorPhone.trim() || authStore.getUser()?.phone || '';
+    const finalPhone = sanitizePhoneNumber(customSupervisorPhone.trim() || authStore.getUser()?.phone || '');
 
     setIsConfirmingAddress(true);
 
@@ -1460,10 +1461,11 @@ export function LocationPickerModal({
                   />
                   <TextInput
                     value={customSupervisorPhone}
-                    onChangeText={setCustomSupervisorPhone}
-                    placeholder="Phone Number *"
+                    onChangeText={(text) => setCustomSupervisorPhone(text.replace(/[^0-9]/g, '').slice(0, 10))}
+                    placeholder="10-Digit Mobile *"
                     placeholderTextColor="#94A3B8"
-                    keyboardType="phone-pad"
+                    keyboardType="number-pad"
+                    maxLength={10}
                     style={[
                       styles.formInput,
                       {

@@ -52,6 +52,8 @@ export interface CreateOrderRequest {
   orderForSomeoneElse?: boolean;
   recipientName?: string;
   recipientPhone?: string;
+  phone?: string;
+  customerPhone?: string;
   notes?: string;
 }
 

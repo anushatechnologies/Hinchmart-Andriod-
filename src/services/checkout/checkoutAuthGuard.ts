@@ -12,6 +12,7 @@ import { Alert } from 'react-native';
 import { mmkvStorage } from '../storage/mmkv';
 import { authStore } from '../../store/authStore';
 import { addressesApi } from '../api/addresses.api';
+import { sanitizePhoneNumber } from '../../utils';
 
 export interface SavedCheckoutDraft {
   addressId?: number | null;
@@ -135,10 +136,11 @@ export async function syncSavedGuestAddressIfNeeded(): Promise<number | null> {
   if (draft?.guestAddress) {
     try {
       const g = draft.guestAddress;
+      const cleanPhone = sanitizePhoneNumber(g.phone || authStore.getUser()?.phone || '');
       const created = await addressesApi.createAddress({
         siteName: g.siteName || g.recipientName,
         recipientName: g.recipientName,
-        phone: g.phone,
+        phone: cleanPhone,
         addressLine1: g.street,
         areaLocality: g.area || '',
         city: g.city,

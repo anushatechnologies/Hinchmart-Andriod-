@@ -187,3 +187,25 @@ export function calculateDiscountPercentage(original: number, discounted: number
   if (original <= 0) return 0;
   return Math.round(((original - discounted) / original) * 100);
 }
+
+/**
+ * Sanitize and normalize phone number string into clean 10-digit number.
+ * Removes all non-numeric characters, country code prefixes (+91, 91), leading zeros, and trailing text.
+ * Strictly guarantees output length <= 10 characters (always fits backend max 20 char constraints).
+ */
+export function sanitizePhoneNumber(phone?: string | null): string {
+  if (!phone) return '';
+  const digits = String(phone).replace(/[^0-9]/g, '');
+  if (digits.length >= 10) {
+    return digits.slice(-10);
+  }
+  return digits;
+}
+
+/**
+ * Validates whether string is a valid 10-digit Indian mobile number (starts with 6, 7, 8, or 9)
+ */
+export function isValidPhoneNumber(phone?: string | null): boolean {
+  const sanitized = sanitizePhoneNumber(phone);
+  return sanitized.length === 10 && /^[6-9]\d{9}$/.test(sanitized);
+}

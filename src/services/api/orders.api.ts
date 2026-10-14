@@ -4,6 +4,8 @@
  */
 import apiClient from './client';
 import { API_ENDPOINTS } from '../../constants/api';
+import { authStore } from '../../store/authStore';
+import { sanitizePhoneNumber } from '../../utils';
 import {
   Order,
   CheckoutPreview,
@@ -40,6 +42,11 @@ export const ordersApi = {
       data.paymentMethod === 'CASH_ON_DELIVERY' || data.paymentMethod === 'COD'
         ? 'COD'
         : data.paymentMethod || 'COD';
+
+    const rawUserPhone = data.phone || data.customerPhone || authStore.getUser()?.phone || '';
+    const cleanUserPhone = sanitizePhoneNumber(rawUserPhone);
+    const cleanRecipientPhone = sanitizePhoneNumber(data.recipientPhone);
+
     const payload: any = {
       addressId: addressIdVal,
       deliveryAddressId: addressIdVal,
@@ -48,6 +55,10 @@ export const ordersApi = {
       deliveryInstructions: data.deliveryInstructions || '',
       requiresCraneUnloading: Boolean(data.requiresCraneUnloading),
     };
+    if (cleanUserPhone) {
+      payload.phone = cleanUserPhone;
+      payload.customerPhone = cleanUserPhone;
+    }
     if (data.poNumber) {
       payload.poNumber = data.poNumber;
     }
@@ -57,7 +68,12 @@ export const ordersApi = {
     if (data.orderForSomeoneElse) {
       payload.orderForSomeoneElse = true;
       payload.recipientName = data.recipientName;
-      payload.recipientPhone = data.recipientPhone;
+      payload.recipientPhone = cleanRecipientPhone || cleanUserPhone;
+      if (cleanRecipientPhone) {
+        payload.phone = cleanRecipientPhone;
+      }
+    } else if (cleanUserPhone) {
+      payload.recipientPhone = cleanUserPhone;
     }
     if (data.notes) {
       payload.notes = data.notes;

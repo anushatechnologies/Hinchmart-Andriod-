@@ -186,6 +186,8 @@ export interface PaymentOrderRequest {
   orderForSomeoneElse?: boolean;
   recipientName?: string;
   recipientPhone?: string;
+  phone?: string;
+  customerPhone?: string;
   notes?: string;
 }
 

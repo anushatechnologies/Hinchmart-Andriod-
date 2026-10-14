@@ -14,16 +14,20 @@
 import apiClient, { unwrapApiResponse } from './client';
 import { API_ENDPOINTS } from '../../constants/api';
 import { CustomerAddress, AddressCreatePayload, AddressUpdatePayload } from '../../types/location.types';
+import { sanitizePhoneNumber } from '../../utils';
 
 export function normalizeCustomerAddress(raw: any, index = 0): CustomerAddress {
   const addressId = Number(raw.addressId || raw.id || index + 1);
+  const rawPhone = raw.phone || raw.phoneNumber || '';
+  const cleanPhone = sanitizePhoneNumber(rawPhone);
+
   return {
     ...raw,
     addressId,
     id: addressId,
     siteName: raw.siteName || raw.recipientName || '',
     recipientName: raw.recipientName || raw.siteName || 'Customer',
-    phone: raw.phone || raw.phoneNumber || '',
+    phone: cleanPhone || rawPhone,
     addressLine1: raw.addressLine1 || '',
     addressLine2: raw.addressLine2 || '',
     houseFlatNo: raw.houseFlatNo || raw.flatNo || raw.doorNo || '',
@@ -92,7 +96,11 @@ export const addressesApi = {
    * POST /api/addresses — Saves a new delivery address with geographic coordinates
    */
   createAddress: async (payload: AddressCreatePayload | any): Promise<CustomerAddress> => {
-    const res = await apiClient.post<any>(API_ENDPOINTS.ADDRESSES.CREATE, payload);
+    const sanitizedPayload = { ...payload };
+    if (sanitizedPayload.phone) {
+      sanitizedPayload.phone = sanitizePhoneNumber(sanitizedPayload.phone);
+    }
+    const res = await apiClient.post<any>(API_ENDPOINTS.ADDRESSES.CREATE, sanitizedPayload);
     const item = res.data?.data || res.data;
     return normalizeCustomerAddress(item);
   },
@@ -104,7 +112,11 @@ export const addressesApi = {
     id: string | number,
     payload: AddressUpdatePayload | any
   ): Promise<CustomerAddress> => {
-    const res = await apiClient.put<any>(API_ENDPOINTS.ADDRESSES.UPDATE(id), payload);
+    const sanitizedPayload = { ...payload };
+    if (sanitizedPayload.phone) {
+      sanitizedPayload.phone = sanitizePhoneNumber(sanitizedPayload.phone);
+    }
+    const res = await apiClient.put<any>(API_ENDPOINTS.ADDRESSES.UPDATE(id), sanitizedPayload);
     const item = res.data?.data || res.data;
     return normalizeCustomerAddress(item);
   },
