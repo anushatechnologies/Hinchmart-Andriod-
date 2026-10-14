@@ -153,7 +153,9 @@ export function DeleteConfirmationModal({
               ]}
             >
               {itemImage && (
-                <Image source={{ uri: itemImage }} style={styles.itemThumb} contentFit="cover" />
+                <View style={[styles.itemThumbBox, { backgroundColor: isDark ? '#0F172A' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+                  <Image source={{ uri: itemImage }} style={styles.itemThumb} contentFit="contain" />
+                </View>
               )}
               <View style={{ flex: 1 }}>
                 <Text
@@ -271,10 +273,19 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 20,
   },
-  itemThumb: {
+  itemThumbBox: {
     width: 44,
     height: 44,
-    borderRadius: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 3,
+  },
+  itemThumb: {
+    width: '100%',
+    height: '100%',
   },
   previewItemName: {
     fontFamily: 'Inter_600SemiBold',

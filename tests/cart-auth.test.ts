@@ -10,6 +10,7 @@ import { store } from '../src/redux/store';
 import {
   clearCart,
   setServerCart,
+  removeItem,
   hideCartToast,
   showAuthModal,
   hideAuthModal,
@@ -1221,4 +1222,125 @@ describe('PART F — Out of Stock Cart Protection Tests', () => {
     assert.strictEqual(selectCartItems(store.getState()).length, 0);
   });
 });
+
+describe('PART G — Stable Cart Addition Order Tests', () => {
+  beforeEach(() => {
+    cartManager.cancelPendingOperations();
+    cartAuthGuard.cancelPendingAction();
+    store.dispatch(clearCart());
+    authStore.clearSession();
+  });
+
+  test('1. Adding multiple products preserves their stable chronological addition order', async () => {
+    authStore.saveSession({
+      user: testUserA,
+      accessToken: 'valid-test-token-user-a',
+      refreshToken: 'valid-test-refresh-a',
+    });
+
+    const prod1 = { id: 'p-1', productId: 'p-1', title: 'Product 1', price: 100, stockQty: 10 };
+    const prod2 = { id: 'p-2', productId: 'p-2', title: 'Product 2', price: 200, stockQty: 10 };
+    const prod3 = { id: 'p-3', productId: 'p-3', title: 'Product 3', price: 300, stockQty: 10 };
+
+    cartApi.addToCart = async () => ({ success: true } as any);
+
+    // Add Product 1
+    cartApi.getCart = async () => ({
+      items: [{ cartItemId: 101, productId: 'p-1', quantity: 1, unitPrice: 100, product: prod1 }],
+    } as any);
+    await cartManager.addToCart(store.dispatch, prod1, 1);
+
+    // Add Product 2
+    cartApi.getCart = async () => ({
+      items: [
+        { cartItemId: 101, productId: 'p-1', quantity: 1, unitPrice: 100, product: prod1 },
+        { cartItemId: 102, productId: 'p-2', quantity: 1, unitPrice: 200, product: prod2 },
+      ],
+    } as any);
+    await cartManager.addToCart(store.dispatch, prod2, 1);
+
+    // Add Product 3
+    cartApi.getCart = async () => ({
+      items: [
+        { cartItemId: 101, productId: 'p-1', quantity: 1, unitPrice: 100, product: prod1 },
+        { cartItemId: 102, productId: 'p-2', quantity: 1, unitPrice: 200, product: prod2 },
+        { cartItemId: 103, productId: 'p-3', quantity: 1, unitPrice: 300, product: prod3 },
+      ],
+    } as any);
+    await cartManager.addToCart(store.dispatch, prod3, 1);
+
+    const items = selectCartItems(store.getState());
+    assert.strictEqual(items.length, 3);
+    assert.strictEqual(items[0].productId, 'p-1');
+    assert.strictEqual(items[1].productId, 'p-2');
+    assert.strictEqual(items[2].productId, 'p-3');
+  });
+
+  test('2. Updating quantities or server updates never reshuffles product order', async () => {
+    authStore.saveSession({
+      user: testUserA,
+      accessToken: 'valid-test-token-user-a',
+      refreshToken: 'valid-test-refresh-a',
+    });
+
+    const prod1 = { id: 'p-1', productId: 'p-1', title: 'Product 1', price: 100, stockQty: 10 };
+    const prod2 = { id: 'p-2', productId: 'p-2', title: 'Product 2', price: 200, stockQty: 10 };
+
+    // Set initial cart with p-1 then p-2
+    store.dispatch(
+      setServerCart({
+        items: [
+          { cartItemId: 101, productId: 'p-1', quantity: 1, unitPrice: 100, product: prod1 },
+          { cartItemId: 102, productId: 'p-2', quantity: 1, unitPrice: 200, product: prod2 },
+        ] as any,
+      } as any)
+    );
+
+    let items = selectCartItems(store.getState());
+    assert.strictEqual(items[0].productId, 'p-1');
+    assert.strictEqual(items[1].productId, 'p-2');
+
+    // Simulate backend PostgreSQL row shuffle (updating p-1 moves it to end of array in DB)
+    store.dispatch(
+      setServerCart({
+        items: [
+          { cartItemId: 102, productId: 'p-2', quantity: 1, unitPrice: 200, product: prod2 },
+          { cartItemId: 101, productId: 'p-1', quantity: 5, unitPrice: 100, product: prod1 },
+        ] as any,
+      } as any)
+    );
+
+    // Frontend MUST maintain the stable addition order: p-1 still first, p-2 second!
+    items = selectCartItems(store.getState());
+    assert.strictEqual(items[0].productId, 'p-1');
+    assert.strictEqual(items[0].quantity, 5);
+    assert.strictEqual(items[1].productId, 'p-2');
+    assert.strictEqual(items[1].quantity, 1);
+  });
+
+  test('3. Removing an item preserves relative addition order of remaining items', async () => {
+    const prod1 = { id: 'p-1', productId: 'p-1', title: 'Product 1', price: 100, stockQty: 10 };
+    const prod2 = { id: 'p-2', productId: 'p-2', title: 'Product 2', price: 200, stockQty: 10 };
+    const prod3 = { id: 'p-3', productId: 'p-3', title: 'Product 3', price: 300, stockQty: 10 };
+
+    store.dispatch(
+      setServerCart({
+        items: [
+          { cartItemId: 101, productId: 'p-1', quantity: 1, unitPrice: 100, product: prod1 },
+          { cartItemId: 102, productId: 'p-2', quantity: 1, unitPrice: 200, product: prod2 },
+          { cartItemId: 103, productId: 'p-3', quantity: 1, unitPrice: 300, product: prod3 },
+        ] as any,
+      } as any)
+    );
+
+    // Remove middle item (p-2)
+    store.dispatch(removeItem('p-2'));
+
+    const items = selectCartItems(store.getState());
+    assert.strictEqual(items.length, 2);
+    assert.strictEqual(items[0].productId, 'p-1');
+    assert.strictEqual(items[1].productId, 'p-3');
+  });
+});
+
 

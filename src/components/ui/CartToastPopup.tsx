@@ -279,7 +279,7 @@ export function CartToastPopup() {
             style={[
               styles.thumbnailContainer,
               {
-                backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+                backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
                 borderColor: isDark ? '#334155' : '#E2E8F0',
               },
             ]}
@@ -288,7 +288,7 @@ export function CartToastPopup() {
               <Image
                 source={{ uri: itemImg }}
                 style={styles.thumbnailImg}
-                contentFit="cover"
+                contentFit="contain"
                 cachePolicy="memory-disk"
               />
             ) : (
@@ -406,6 +406,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 2,
   },
   thumbnailImg: {
     width: '100%',

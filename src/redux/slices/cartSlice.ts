@@ -29,6 +29,8 @@ export interface CartAuthModalState {
 interface CartState {
   userId: string | number | null;
   items: CartItem[];
+  additionOrder: Record<string, number>;
+  orderCounter: number;
   storeId: number | null;
   storeName: string | null;
   storeSlug: string | null;
@@ -47,6 +49,8 @@ interface CartState {
 const initialState: CartState = {
   userId: null,
   items: [],
+  additionOrder: {},
+  orderCounter: 0,
   storeId: null,
   storeName: null,
   storeSlug: null,
@@ -133,9 +137,43 @@ const cartSlice = createSlice({
       if (incomingUserId !== undefined && state.userId !== null && String(incomingUserId) !== String(state.userId)) {
         // Enforce user-level isolation: clear previous user's cart items
         state.items = [];
+        state.additionOrder = {};
+        state.orderCounter = 0;
       }
       state.userId = incomingUserId ?? state.userId;
-      state.items = Array.isArray(cart?.items) ? cart.items.map(mapBackendItem) : [];
+      if (!state.additionOrder) state.additionOrder = {};
+      if (state.orderCounter === undefined) state.orderCounter = 0;
+
+      const mapped = Array.isArray(cart?.items) ? cart.items.map(mapBackendItem) : [];
+
+      // Ensure every incoming item has a stable addition order sequence
+      for (const item of mapped) {
+        const pId = String(item.productId || item.id || '');
+        const cId = String((item as any).cartItemId || '');
+        const existingOrder = state.additionOrder[pId] ?? (cId ? state.additionOrder[cId] : undefined);
+        if (existingOrder === undefined) {
+          state.orderCounter += 1;
+          state.additionOrder[pId] = state.orderCounter;
+          if (cId) state.additionOrder[cId] = state.orderCounter;
+        } else {
+          if (cId && state.additionOrder[cId] === undefined) {
+            state.additionOrder[cId] = existingOrder;
+          }
+        }
+      }
+
+      // Sort items deterministically in chronological addition order
+      mapped.sort((a, b) => {
+        const pIdA = String(a.productId || a.id || '');
+        const pIdB = String(b.productId || b.id || '');
+        const cIdA = String((a as any).cartItemId || '');
+        const cIdB = String((b as any).cartItemId || '');
+        const orderA = state.additionOrder[pIdA] ?? (cIdA ? state.additionOrder[cIdA] : 0) ?? 0;
+        const orderB = state.additionOrder[pIdB] ?? (cIdB ? state.additionOrder[cIdB] : 0) ?? 0;
+        return orderA - orderB;
+      });
+
+      state.items = mapped;
       state.storeId = cart?.storeId ?? state.storeId;
       state.storeName = cart?.storeName ?? state.storeName;
       state.storeSlug = cart?.storeSlug ?? state.storeSlug;
@@ -145,6 +183,24 @@ const cartSlice = createSlice({
       state.serverTotalGst = Number(cart?.totalGst || 0);
       state.serverDeliveryCharge = Number(cart?.deliveryCharge || 0);
       state.serverGrandTotal = Number(cart?.grandTotal || 0);
+    },
+
+    /**
+     * Record addition order for a product immediately upon user interaction
+     */
+    recordAdditionOrder: (
+      state,
+      action: PayloadAction<{ productId: string | number; cartItemId?: string | number }>
+    ) => {
+      if (!state.additionOrder) state.additionOrder = {};
+      if (state.orderCounter === undefined) state.orderCounter = 0;
+      const pId = String(action.payload.productId);
+      const cId = action.payload.cartItemId ? String(action.payload.cartItemId) : '';
+      if (state.additionOrder[pId] === undefined) {
+        state.orderCounter += 1;
+        state.additionOrder[pId] = state.orderCounter;
+        if (cId) state.additionOrder[cId] = state.orderCounter;
+      }
     },
 
     showAuthModal: (
@@ -185,6 +241,12 @@ const cartSlice = createSlice({
       if (!Array.isArray(state.items)) {
         state.items = [];
       }
+      if (!state.additionOrder) state.additionOrder = {};
+      if (state.orderCounter === undefined) state.orderCounter = 0;
+
+      const pId = String(action.payload.productId || action.payload.id || '');
+      const cId = String((action.payload as any).cartItemId || '');
+
       const existing = state.items.find(
         (i) => i.productId === action.payload.productId && i.variantId === action.payload.variantId
       );
@@ -201,6 +263,11 @@ const cartSlice = createSlice({
         existing.quantity += qty;
         existing.totalPrice = existing.quantity * existing.unitPrice;
       } else {
+        if (state.additionOrder[pId] === undefined) {
+          state.orderCounter += 1;
+          state.additionOrder[pId] = state.orderCounter;
+          if (cId) state.additionOrder[cId] = state.orderCounter;
+        }
         state.items.push(action.payload);
       }
       // Trigger toast
@@ -273,6 +340,10 @@ const cartSlice = createSlice({
           String(i.productId) !== cleanTargetId &&
           String(i.id) !== `${cleanTargetId}_default`
       );
+      if (state.additionOrder) {
+        delete state.additionOrder[targetId];
+        delete state.additionOrder[cleanTargetId];
+      }
     },
     setStoreInfo: (
       state,
@@ -287,6 +358,8 @@ const cartSlice = createSlice({
       action: PayloadAction<{ storeId: number; storeName?: string; storeSlug?: string }>
     ) => {
       state.items = [];
+      state.additionOrder = {};
+      state.orderCounter = 0;
       state.storeId = action.payload.storeId;
       state.storeName = action.payload.storeName || null;
       state.storeSlug = action.payload.storeSlug || null;
@@ -317,6 +390,8 @@ const cartSlice = createSlice({
           return {
             ...state,
             ...action.payload.cart,
+            additionOrder: action.payload.cart.additionOrder || {},
+            orderCounter: action.payload.cart.orderCounter || 0,
             authModal: null,
             addedToast: null,
           };
@@ -332,6 +407,7 @@ export const {
   setServerCart,
   setCartItems,
   addItem,
+  recordAdditionOrder,
   showCartToast,
   hideCartToast,
   showAuthModal,
@@ -350,8 +426,35 @@ export const {
 const EMPTY_CART_ITEMS: any[] = [];
 
 // Selectors
-export const selectCartItems = (state: any) =>
-  Array.isArray(state?.cart?.items) ? state.cart.items : EMPTY_CART_ITEMS;
+export const selectCartItems = (state: any) => {
+  const items = Array.isArray(state?.cart?.items) ? state.cart.items : EMPTY_CART_ITEMS;
+  const additionOrder = state?.cart?.additionOrder;
+  if (!additionOrder || items.length <= 1) return items;
+  // If items are already in additionOrder, keep reference equality
+  let isSorted = true;
+  for (let i = 0; i < items.length - 1; i++) {
+    const pIdA = String(items[i]?.productId || items[i]?.id || '');
+    const pIdB = String(items[i + 1]?.productId || items[i + 1]?.id || '');
+    const cIdA = String((items[i] as any)?.cartItemId || '');
+    const cIdB = String((items[i + 1] as any)?.cartItemId || '');
+    const orderA = additionOrder[pIdA] ?? (cIdA ? additionOrder[cIdA] : 0) ?? 0;
+    const orderB = additionOrder[pIdB] ?? (cIdB ? additionOrder[cIdB] : 0) ?? 0;
+    if (orderA > orderB) {
+      isSorted = false;
+      break;
+    }
+  }
+  if (isSorted) return items;
+  return [...items].sort((a: any, b: any) => {
+    const pIdA = String(a.productId || a.id || '');
+    const pIdB = String(b.productId || b.id || '');
+    const cIdA = String((a as any).cartItemId || '');
+    const cIdB = String((b as any).cartItemId || '');
+    const orderA = additionOrder[pIdA] ?? (cIdA ? additionOrder[cIdA] : 0) ?? 0;
+    const orderB = additionOrder[pIdB] ?? (cIdB ? additionOrder[cIdB] : 0) ?? 0;
+    return orderA - orderB;
+  });
+};
 export const selectCartStore = (state: any) => ({
   storeId: state?.cart?.storeId ?? null,
   storeName: state?.cart?.storeName ?? null,

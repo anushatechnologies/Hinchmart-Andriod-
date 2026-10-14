@@ -24,6 +24,7 @@ import {
   setServerCart,
   showCartToast,
   showAuthModal,
+  recordAdditionOrder,
 } from '../../redux/slices/cartSlice';
 import { cartApi } from '../api/cart.api';
 import { authStore } from '../../store/authStore';
@@ -172,6 +173,9 @@ export const cartManager = {
       return { success: false, inFlight: true };
     }
     inFlightAddRequests.add(productId);
+
+    // Lock in addition order sequence immediately on user intent
+    dispatch(recordAdditionOrder({ productId }));
 
     const unitPrice =
       typeof product?.price === 'number'

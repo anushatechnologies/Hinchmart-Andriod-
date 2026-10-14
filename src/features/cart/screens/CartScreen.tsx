@@ -54,6 +54,7 @@ import { discountsApi } from '../../../services/api/discounts.api';
 import { CustomerDiscount } from '../../../types/discount.types';
 import { couponsApi } from '../../../services/api/coupons.api';
 import { EligibleCoupon } from '../../../types/coupon.types';
+import { resolveProductImage } from '../../../hooks/useLiveProducts';
 
 interface CartItemCardProps {
   item: any;
@@ -73,20 +74,23 @@ const CartItemCard = React.memo(
     onUpdateQty,
     onPromptDelete,
   }: CartItemCardProps) {
-    const primaryImg =
+    const itemName = item?.product?.name || item?.name || (item as any)?.productName || 'Construction Material';
+    const rawImg =
+      item?.image ||
+      item?.imageUrl ||
       (item?.product as any)?.image ||
       (item?.product as any)?.imageUrl ||
       (Array.isArray(item?.product?.images) && typeof item.product.images[0] === 'string'
         ? item.product.images[0]
         : item?.product?.images?.[0]?.url) ||
       '';
+    const primaryImg = resolveProductImage(item?.product || itemName, rawImg, item?.product || item);
 
     const brandName =
       typeof item?.product?.brand === 'string'
         ? item.product.brand
         : (item?.product?.brand as any)?.name || 'Verified Supplier';
 
-    const itemName = item?.product?.name || (item as any)?.name || 'Construction Material';
     const itemUnit = item?.product?.unit || (item as any)?.unit || 'Unit';
     const unitPrice = item?.unitPrice || (item?.product as any)?.price || 0;
     const totalPrice = item?.totalPrice || unitPrice * (item?.quantity || 1);
@@ -151,29 +155,40 @@ const CartItemCard = React.memo(
 
         {/* Product Details Row */}
         <View style={styles.itemBodyRow}>
-          <View style={[styles.itemImgContainer, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+          <View
+            style={[
+              styles.itemImgContainer,
+              {
+                backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
+                borderColor: isDark ? '#334155' : '#E2E8F0',
+              },
+            ]}
+          >
             <Image
               source={{ uri: primaryImg }}
               style={styles.itemImg}
-              contentFit="cover"
+              contentFit="contain"
               cachePolicy="memory-disk"
+              transition={150}
             />
           </View>
 
           <View style={styles.itemInfoCol}>
-            <Text
-              numberOfLines={2}
-              style={[styles.itemName, { color: theme.colors.textPrimary }]}
-            >
-              {itemName}
-            </Text>
+            <View style={styles.itemTitleGroup}>
+              <Text
+                numberOfLines={2}
+                style={[styles.itemName, { color: theme.colors.textPrimary }]}
+              >
+                {itemName}
+              </Text>
 
-            {item.quantity >= 5 && (
-              <View style={styles.tierChip}>
-                <Ionicons name="pricetag" size={11} color="#E31E24" />
-                <Text style={styles.tierChipText}>Bulk Volume Tier Applied</Text>
-              </View>
-            )}
+              {item.quantity >= 5 && (
+                <View style={styles.tierChip}>
+                  <Ionicons name="pricetag" size={11} color="#E31E24" />
+                  <Text style={styles.tierChipText}>Bulk Volume Tier Applied</Text>
+                </View>
+              )}
+            </View>
 
             {/* Price Row: Unit rate & Line Item Subtotal */}
             <View style={styles.pricingRow}>
@@ -1567,6 +1582,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 6,
   },
   itemImg: {
     width: '100%',
@@ -1575,6 +1593,11 @@ const styles = StyleSheet.create({
   itemInfoCol: {
     flex: 1,
     marginLeft: 12,
+    minHeight: 84,
+    justifyContent: 'space-between',
+  },
+  itemTitleGroup: {
+    flexShrink: 1,
   },
   itemName: {
     fontFamily: 'Inter_600SemiBold',
