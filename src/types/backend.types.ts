@@ -545,9 +545,14 @@ export interface HotDealProduct {
   productId: number | string;
   name?: string;
   productName?: string;
+  title?: string;
   description?: string;
   price: number;
+  dealPrice?: number;
+  sellingPrice?: number;
   mrp?: number;
+  discountPercentage?: number;
+  discountPercent?: number;
   stockQuantity?: number;
   imageUrl?: string;
   categoryName?: string;

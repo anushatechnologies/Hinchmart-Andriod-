@@ -12,7 +12,12 @@ import { HotDealProduct, HotDealsResponse } from '../../types/backend.types';
 export interface NormalizedHotDealProduct extends HotDealProduct {
   id: string;
   title: string;
+  price: number;
+  dealPrice?: number;
+  sellingPrice?: number;
   comparePrice?: number;
+  mrp?: number;
+  discountPercentage?: number;
   discountPercent?: number;
   image: string;
 }
@@ -20,25 +25,44 @@ export interface NormalizedHotDealProduct extends HotDealProduct {
 /**
  * Maps backend hot deal product to frontend display structure
  * while preserving all original backend attributes.
+ *
+ * Directly binds discountPercentage from backend API:
+ * {product.discountPercentage && <span className="badge">{Math.round(product.discountPercentage)}% OFF</span>}
+ * Removes 13% off fallback calculation.
  */
 export function normalizeHotDealProduct(raw: any, index = 0): NormalizedHotDealProduct {
   const pId = raw.productId || raw.id || raw.product_id || index + 1;
-  const name = raw.productName || raw.name || raw.title || '';
-  const price = typeof raw.price === 'number' ? raw.price : parseFloat(String(raw.price || 0)) || 0;
-  const mrp = typeof raw.mrp === 'number' ? raw.mrp : typeof raw.comparePrice === 'number' ? raw.comparePrice : undefined;
+  const name = raw.title || raw.productName || raw.name || '';
 
-  let discountPercent =
-    typeof raw.discountPercent === 'number'
-      ? raw.discountPercent
-      : typeof raw.discountPercentage === 'number'
+  const rawBasePrice = typeof raw.price === 'number' ? raw.price : parseFloat(String(raw.price || 0)) || 0;
+  const rawDealPrice = typeof raw.dealPrice === 'number' && raw.dealPrice > 0 ? raw.dealPrice : undefined;
+  const rawSellingPrice = typeof raw.sellingPrice === 'number' && raw.sellingPrice > 0 ? raw.sellingPrice : undefined;
+
+  // Actual price customer pays (prefer dealPrice / sellingPrice if provided)
+  const price = rawDealPrice ?? rawSellingPrice ?? rawBasePrice;
+
+  // Original/MRP compare price
+  const mrp =
+    typeof raw.mrp === 'number' && raw.mrp > 0
+      ? raw.mrp
+      : typeof raw.comparePrice === 'number' && raw.comparePrice > 0
+      ? raw.comparePrice
+      : (rawDealPrice && rawBasePrice > rawDealPrice)
+      ? rawBasePrice
+      : undefined;
+
+  // Direct backend discount percentage (bind directly, remove 13% fallback calculation)
+  const rawDiscount =
+    typeof raw.discountPercentage === 'number' && raw.discountPercentage > 0
       ? raw.discountPercentage
-      : typeof raw.discount === 'number'
+      : typeof raw.discountPercent === 'number' && raw.discountPercent > 0
+      ? raw.discountPercent
+      : typeof raw.discount === 'number' && raw.discount > 0
       ? raw.discount
-      : 0;
+      : undefined;
 
-  if (!discountPercent && mrp && price && mrp > price) {
-    discountPercent = Math.round(((mrp - price) / mrp) * 100);
-  }
+  const discountPercentage = rawDiscount != null ? Math.round(rawDiscount) : undefined;
+  const discountPercent = discountPercentage ?? 0;
 
   const rawImg = raw.imageUrl || raw.image || (Array.isArray(raw.images) && raw.images[0]) || '';
   const imgUrl = normalizeProductImageUrl(typeof rawImg === 'string' ? rawImg : rawImg?.url || '');
@@ -51,8 +75,11 @@ export function normalizeHotDealProduct(raw: any, index = 0): NormalizedHotDealP
     productName: name,
     title: name,
     price,
+    dealPrice: rawDealPrice,
+    sellingPrice: rawSellingPrice,
     mrp,
     comparePrice: mrp,
+    discountPercentage,
     discountPercent,
     imageUrl: imgUrl,
     image: imgUrl,
