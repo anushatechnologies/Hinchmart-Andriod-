@@ -266,7 +266,7 @@ export function OrderSuccessScreen({ route, navigation }: OrderConfirmationProps
 
   // ── 4. LABEL & STATUS MAPPING HELPERS ──
   const getPaymentMethodDisplay = () => {
-    if (isCod) return 'Pay on Site Delivery (COD)';
+    if (isCod) return 'Pay on Delivery (COD)';
     switch (effectiveMethod) {
       case 'UPI':
       case 'GPAY':

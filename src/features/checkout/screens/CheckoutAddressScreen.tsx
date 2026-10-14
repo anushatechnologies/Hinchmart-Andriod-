@@ -1593,10 +1593,10 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
           ) {
             Alert.alert(
               'Online Payment Unavailable',
-              'Online payment gateway authentication failed on the server. You can switch to "Pay on Site Delivery" to place your order right now.',
+              'Online payment gateway authentication failed on the server. You can switch to "Pay on Delivery (COD)" to place your order right now.',
               [
                 {
-                  text: 'Pay on Site Delivery',
+                  text: 'Pay on Delivery (COD)',
                   onPress: () => setSelectedMethod('cod'),
                 },
                 { text: 'Cancel', style: 'cancel' },
@@ -1607,7 +1607,7 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
 
           Alert.alert(
             'Payment Session Failed',
-            errorMsg || 'Unable to initialize secure Razorpay session. Please try again or choose Pay on Site Delivery.'
+            errorMsg || 'Unable to initialize secure Razorpay session. Please try again or choose Pay on Delivery (COD).'
           );
           return;
         }
@@ -2206,7 +2206,7 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
                 <Ionicons name="cash-outline" size={20} color="#10B981" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.methodTitle, { color: theme.colors.textPrimary }]}>Pay on Site Delivery</Text>
+                <Text style={[styles.methodTitle, { color: theme.colors.textPrimary }]}>Pay on Delivery (COD)</Text>
                 <Text style={[styles.methodSub, { color: theme.colors.textSecondary }]}>Inspect materials on arrival before paying</Text>
               </View>
               <Ionicons
@@ -2273,7 +2273,7 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
               {isProcessing
                 ? 'Initiating Secure Gateway...'
                 : selectedMethod === 'cod'
-                ? 'Confirm Site Delivery Order'
+                ? 'Confirm Pay on Delivery'
                 : `Pay ${formatPrice(total)} Securely`}
             </Text>
             {!isProcessing && <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />}
