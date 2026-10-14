@@ -1156,14 +1156,15 @@ describe('PART E — Authentication Modal Dismissal & Lifecycle Regression Tests
 
 describe('PART F — Out of Stock Cart Protection Tests', () => {
   beforeEach(() => {
-    authStore.saveSession(
-      {
+    authStore.saveSession({
+      user: {
         id: 7001,
         name: 'Stock Test Contractor',
         phone: '9876543210',
-      },
-      'fake-stock-token'
-    );
+      } as any,
+      accessToken: 'fake-stock-token',
+      refreshToken: 'fake-stock-refresh',
+    });
     store.dispatch(clearCart());
   });
 
