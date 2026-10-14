@@ -169,7 +169,7 @@ const VALUE_BADGES: ValueBadgeItem[] = [
     description:
       'Your commercial transactions are safeguarded with bank-grade 256-bit SSL encryption, escrow payment protection, and automated GST Input Tax Credit (ITC) invoices.',
     points: [
-      'Buyer escrow protection (Funds released upon site delivery confirmation)',
+      'Buyer escrow protection (Funds released upon delivery confirmation)',
       'Automated GST compliant e-Invoices with instant ITC claims',
       'Multiple secure options: UPI, NetBanking, Cards & Credit Lines',
     ],

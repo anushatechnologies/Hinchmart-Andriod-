@@ -392,7 +392,7 @@ export function RentalListScreen({ navigation }: any) {
       const end = new Date(Date.now() + rentalDays * 86400000);
       const endDate = end.toISOString().split('T')[0];
       if (!deliverySite.trim()) {
-        Alert.alert('Delivery Address Required', 'Please enter your project delivery site address to proceed with the booking.');
+        Alert.alert('Delivery Address Required', 'Please enter your delivery address to proceed with the booking.');
         setIsBooking(false);
         return;
       }
@@ -727,9 +727,9 @@ export function RentalListScreen({ navigation }: any) {
                   </Text>
                 </View>
 
-                {/* Site Delivery Address */}
+                {/* Delivery Address */}
                 <Text style={{ fontSize: 13, fontWeight: '700', color: theme.colors.textPrimary, marginTop: 12, marginBottom: 6 }}>
-                  Project Site Delivery Address:
+                  Delivery Address:
                 </Text>
                 <TextInput
                   value={deliverySite}

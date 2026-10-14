@@ -383,7 +383,7 @@ export function TermsScreen({ navigation }: any) {
     },
     {
       title: '5. Payment & Settlement',
-      body: 'Payments processed via Bank Wire, RTGS/NEFT, Corporate Card, or Business Wallet balance are protected until site delivery verification.',
+      body: 'Payments processed via Bank Wire, RTGS/NEFT, Corporate Card, or Business Wallet balance are protected until delivery verification.',
     },
   ];
 

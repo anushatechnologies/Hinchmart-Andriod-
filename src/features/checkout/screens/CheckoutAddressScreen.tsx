@@ -502,10 +502,10 @@ export function CheckoutAddressScreen({ navigation }: any) {
   const handleProceedToPayment = () => {
     if (!selectedAddr || liveAddresses.length === 0) {
       Alert.alert(
-        'Delivery Site Required',
+        'Delivery Address Required',
         'Please add a delivery address to proceed with your order.',
         [
-          { text: 'Add Delivery Site', onPress: () => setIsAddModalVisible(true) },
+          { text: 'Add Delivery Address', onPress: () => setIsAddModalVisible(true) },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
@@ -519,7 +519,7 @@ export function CheckoutAddressScreen({ navigation }: any) {
       Alert.alert(
         'Invalid Address',
         'Please add a verified delivery address to proceed.',
-        [{ text: 'Add Site', onPress: () => setIsAddModalVisible(true) }]
+        [{ text: 'Add Address', onPress: () => setIsAddModalVisible(true) }]
       );
       return;
     }
@@ -529,13 +529,13 @@ export function CheckoutAddressScreen({ navigation }: any) {
     if (has24HourItems && !isServiceable) {
       Alert.alert(
         '📍 24-Hr Delivery Restricted',
-        `Your cart contains 24-Hour Express items that can only be delivered in Hyderabad.\n\n"${selectedObj?.title}" (${selectedObj?.address}) is outside the Hyderabad express zone. Please select a Hyderabad site.`,
+        `Your cart contains 24-Hour Express items that can only be delivered in Hyderabad.\n\n"${selectedObj?.title}" (${selectedObj?.address}) is outside the Hyderabad express zone. Please select a Hyderabad delivery address.`,
         [{ text: 'OK' }]
       );
       return;
     }
 
-    // Preserve selected delivery site across potential authentication
+    // Preserve selected delivery address across potential authentication
     saveCheckoutDraft({
       addressId: numericId,
       addressTitle: selectedObj?.title,
@@ -571,7 +571,7 @@ export function CheckoutAddressScreen({ navigation }: any) {
         >
           <Ionicons name="arrow-back" size={23} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: '#FFFFFF' }]}>Select Delivery Site</Text>
+        <Text style={[styles.headerTitle, { color: '#FFFFFF' }]}>Select Delivery Address</Text>
         <TouchableOpacity
           onPress={() => setIsAddModalVisible(true)}
           activeOpacity={0.7}
@@ -593,7 +593,7 @@ export function CheckoutAddressScreen({ navigation }: any) {
           <View style={[styles.stepBadge, styles.stepBadgeActive]}>
             <Text style={styles.stepBadgeText}>1</Text>
           </View>
-          <Text style={[styles.stepLabelActive, { color: theme.colors.textPrimary }]}>Delivery Site</Text>
+          <Text style={[styles.stepLabelActive, { color: theme.colors.textPrimary }]}>Delivery Address</Text>
           <View style={[styles.stepConnector, { backgroundColor: theme.colors.cardBorder }]} />
           <View style={[styles.stepBadge, { backgroundColor: theme.colors.surfaceVariant, borderColor: theme.colors.cardBorder }]}>
             <Text style={[styles.stepBadgeText, { color: theme.colors.textTertiary }]}>2</Text>
@@ -1349,7 +1349,7 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
               currentId = num;
               if (isMounted) {
                 setResolvedAddressId(num);
-                const title = def.siteName || def.recipientName || `Project Site #${num}`;
+                const title = def.siteName || def.recipientName || `Delivery Address #${num}`;
                 const fullAddr = [
                   def.houseFlatNo,
                   def.addressLine1,
@@ -1454,11 +1454,11 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
 
     if (!resolvedAddressId || isNaN(resolvedAddressId) || resolvedAddressId <= 0) {
       Alert.alert(
-        'Delivery Site Required',
+        'Delivery Address Required',
         'Please select or add a verified delivery address before proceeding to payment.',
         [
           {
-            text: 'Select Delivery Site',
+            text: 'Select Delivery Address',
             onPress: () => navigation.navigate('CheckoutAddress'),
           },
           { text: 'Cancel', style: 'cancel' },
@@ -1809,7 +1809,7 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
           <View style={[styles.stepBadge, styles.stepBadgeDone]}>
             <Ionicons name="checkmark" size={12} color="#FFFFFF" />
           </View>
-          <Text style={[styles.stepLabelInactive, { color: theme.colors.textSecondary }]}>Delivery Site</Text>
+          <Text style={[styles.stepLabelInactive, { color: theme.colors.textSecondary }]}>Delivery Address</Text>
           <View style={[styles.stepConnector, { backgroundColor: '#10B981' }]} />
           <View style={[styles.stepBadge, styles.stepBadgeActive]}>
             <Text style={styles.stepBadgeText}>2</Text>
@@ -1851,17 +1851,17 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Text numberOfLines={1} style={{ fontFamily: 'Inter_700Bold', fontSize: 13, color: theme.colors.textPrimary, flexShrink: 1 }}>
                 {resolvedAddressId
-                  ? (deliverySiteTitle || `Delivery Site #${resolvedAddressId}`)
-                  : (isLoadingAddress ? 'Detecting delivery site...' : 'No Delivery Site Selected')}
+                  ? (deliverySiteTitle || `Delivery Address #${resolvedAddressId}`)
+                  : (isLoadingAddress ? 'Detecting delivery address...' : 'No Delivery Address Selected')}
               </Text>
               {resolvedAddressId ? (
                 <View style={{ backgroundColor: 'rgba(16, 185, 129, 0.12)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 9, color: '#10B981' }}>VERIFIED SITE</Text>
+                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 9, color: '#10B981' }}>VERIFIED ADDRESS</Text>
                 </View>
               ) : null}
             </View>
             <Text numberOfLines={1} style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 }}>
-              {deliverySiteAddress || (isLoadingAddress ? 'Fetching site details...' : 'Tap change to select or add your project site')}
+              {deliverySiteAddress || (isLoadingAddress ? 'Fetching address details...' : 'Tap change to select or add your delivery address')}
             </Text>
           </View>
           <TouchableOpacity
@@ -1896,7 +1896,7 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
             <Ionicons name="person-circle-outline" size={24} color="#3B82F6" />
             <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={[styles.guestNoticeTitle, { color: theme.colors.textPrimary }]}>
-                Guest Site Contact
+                Guest Contact Details
               </Text>
               <Text style={[styles.guestNoticeSub, { color: theme.colors.textSecondary }]}>
                 Sign in to link orders to your GST profile and earn points.

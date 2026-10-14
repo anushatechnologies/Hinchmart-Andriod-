@@ -213,7 +213,7 @@ export function VendorOrderCard({ order, onPress }: { order: Order; onPress: () 
       <View style={orderCardStyles.timelineWrap}>
         <View style={orderCardStyles.timelineHeader}>
           <Text style={[orderCardStyles.timelineTitle, { color: theme.colors.textSecondary }]}>
-            🚚 Estimated Site Delivery: <Text style={{ fontFamily: 'Inter_700Bold', color: theme.colors.textPrimary }}>{order.estimatedDelivery || 'Aug 24, 2026'}</Text>
+            🚚 Estimated Delivery: <Text style={{ fontFamily: 'Inter_700Bold', color: theme.colors.textPrimary }}>{order.estimatedDelivery || 'Aug 24, 2026'}</Text>
           </Text>
         </View>
         <View style={orderCardStyles.progressTrack}>

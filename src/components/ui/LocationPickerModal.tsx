@@ -80,12 +80,12 @@ export function customerAddressToDeliverySite(addr: CustomerAddress): DeliverySi
 
   return {
     id: String(addr.addressId || (addr as any).id),
-    name: addr.siteName || addr.recipientName || 'Saved Delivery Site',
+    name: addr.siteName || addr.recipientName || 'Saved Delivery Address',
     address: parts.join(', ') || `${addr.city}, ${addr.country}`,
     city: addr.city || 'Hyderabad',
     country: addr.country || 'India',
     type: (addr.addressType === 'HOME' ? 'office' : 'project') as any,
-    badgeLabel: addr.isDefault ? '⭐ DEFAULT DELIVERY SITE' : 'SAVED ADDRESS',
+    badgeLabel: addr.isDefault ? '⭐ DEFAULT DELIVERY ADDRESS' : 'SAVED ADDRESS',
     latitude: addr.latitude || 17.4435,
     longitude: addr.longitude || 78.3772,
     addressLine1: addr.addressLine1,
@@ -411,7 +411,7 @@ export function LocationPickerModal({
     city: selectedSite?.city || 'Hyderabad',
     country: selectedSite?.country || 'India',
     type: selectedSite?.type || 'project',
-    badgeLabel: selectedSite?.badgeLabel || 'DELIVERY SITE',
+    badgeLabel: selectedSite?.badgeLabel || 'DELIVERY ADDRESS',
     distanceKm: selectedSite?.distanceKm || 0,
     latitude: initialLat,
     longitude: initialLng,

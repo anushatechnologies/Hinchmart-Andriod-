@@ -296,7 +296,7 @@ export function OrderSuccessScreen({ route, navigation }: OrderConfirmationProps
     if (isCod) {
       if (isPaid) {
         return {
-          label: 'Collected on Site Delivery',
+          label: 'Collected on Delivery (COD)',
           color: '#10B981',
           bg: 'rgba(16, 185, 129, 0.12)',
         };
@@ -386,20 +386,20 @@ export function OrderSuccessScreen({ route, navigation }: OrderConfirmationProps
         };
       case 'OUT_FOR_DELIVERY':
         return {
-          label: 'Out for Site Delivery',
+          label: 'Out for Delivery',
           color: '#F59E0B',
           bg: 'rgba(245, 158, 11, 0.12)',
         };
       case 'DELIVERED':
         return {
-          label: 'Delivered to Site',
+          label: 'Delivered',
           color: '#10B981',
           bg: 'rgba(16, 185, 129, 0.12)',
         };
       case 'PENDING_SITE_DELIVERY':
       case 'PENDING_DELIVERY':
         return {
-          label: 'Pending Site Delivery',
+          label: 'Pending Delivery',
           color: '#F59E0B',
           bg: 'rgba(245, 158, 11, 0.12)',
         };

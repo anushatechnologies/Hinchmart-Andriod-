@@ -63,7 +63,7 @@ export const APP_VERSION_ENDPOINT = '/api/app-version';
 export const DEFAULT_RELEASE_NOTES = [
   'Improved app performance and faster loading speeds',
   'Fixed bugs and enhanced reliability',
-  'Improved Google Maps delivery site pinpointing',
+  'Improved Google Maps delivery address pinpointing',
   'Instant Razorpay checkout and live order tracking',
   'Security and system stability improvements',
 ];

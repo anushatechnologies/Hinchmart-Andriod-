@@ -652,7 +652,7 @@ export function RFQDetailScreen({ route, navigation }: any) {
                 <Ionicons name="location-outline" size={18} color={theme.colors.primary} />
                 <Text style={[styles.cardTag, { color: theme.colors.textTertiary }]}>DELIVERY LOCATION</Text>
                 <Text style={[styles.cardTagVal, { color: theme.colors.textPrimary }]}>
-                  {rfq.deliveryLocation || 'On-site delivery'}
+                  {rfq.deliveryLocation || 'Delivery Address'}
                 </Text>
               </View>
               <View style={[styles.halfCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
@@ -1384,11 +1384,11 @@ export function RFQCreateScreen({ route, navigation }: any) {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={[styles.inputLabel, { color: theme.colors.textPrimary }]}>Delivery Site Address</Text>
+            <Text style={[styles.inputLabel, { color: theme.colors.textPrimary }]}>Delivery Address</Text>
             <TextInput
               value={deliveryLocation}
               onChangeText={setDeliveryLocation}
-              placeholder="e.g. Site 4, Financial District, Hyderabad"
+              placeholder="e.g. Plot 4, Financial District, Hyderabad"
               placeholderTextColor={theme.colors.textTertiary}
               style={[styles.formInput, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
             />
@@ -1399,7 +1399,7 @@ export function RFQCreateScreen({ route, navigation }: any) {
             <TextInput
               value={paymentTerms}
               onChangeText={setPaymentTerms}
-              placeholder="e.g. 30% Advance, 70% upon site delivery"
+              placeholder="e.g. 30% Advance, 70% upon delivery"
               placeholderTextColor={theme.colors.textTertiary}
               style={[styles.formInput, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
             />

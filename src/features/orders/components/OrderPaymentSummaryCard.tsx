@@ -120,7 +120,7 @@ export function OrderPaymentSummaryCard({
     if (isCod) {
       if (isPaid) {
         return {
-          label: 'Collected on Site Delivery',
+          label: 'Collected on Delivery (COD)',
           color: '#10B981',
           bg: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
           icon: 'checkmark-circle' as const,

@@ -448,10 +448,10 @@ export function CartScreen({ navigation }: any) {
     if (has24HourItems && !isSiteServiceableFor24Hr) {
       Alert.alert(
         '📍 24-Hr Delivery Restricted',
-        `Your cart contains items eligible exclusively for 24-Hour delivery in Hyderabad.\n\nYour current site is set to "${deliverySite?.name || "Selected site"} (${deliverySite?.city || ""})", which is outside the Hyderabad express zone. Please select a Hyderabad delivery site to proceed.`,
+        `Your cart contains items eligible exclusively for 24-Hour delivery in Hyderabad.\n\nYour current location is set to "${deliverySite?.name || "Selected location"} (${deliverySite?.city || ""})", which is outside the Hyderabad express zone. Please select a Hyderabad delivery address to proceed.`,
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Select Hyderabad Site', onPress: () => setLocationModalVisible(true) },
+          { text: 'Select Hyderabad Address', onPress: () => setLocationModalVisible(true) },
         ]
       );
       return;
@@ -881,7 +881,7 @@ export function CartScreen({ navigation }: any) {
           ]}
           activeOpacity={0.8}
           accessibilityRole="button"
-          accessibilityLabel="Change delivery site"
+          accessibilityLabel="Change delivery address"
         >
           <View style={styles.addressLeftRow}>
             <View style={[styles.locationIconWrap, { backgroundColor: isDark ? '#0F172A' : '#EFF6FF' }]}>
@@ -889,10 +889,10 @@ export function CartScreen({ navigation }: any) {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.addressLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                DELIVER TO PROJECT SITE
+                DELIVER TO ADDRESS
               </Text>
               <Text numberOfLines={1} style={[styles.addressSiteName, { color: theme.colors.textPrimary }]}>
-                {deliverySite ? deliverySite.name : 'Select Delivery Site'}
+                {deliverySite ? deliverySite.name : 'Select Delivery Address'}
               </Text>
               <Text numberOfLines={1} style={[styles.addressCity, { color: theme.colors.textSecondary }]}>
                 {deliverySite ? `${deliverySite.city}, ${deliverySite.state || 'India'}` : 'Tap to choose delivery location'}
@@ -985,7 +985,7 @@ export function CartScreen({ navigation }: any) {
                       ]}
                     >
                       {isFreeShipping
-                        ? 'Free Site Delivery Unlocked'
+                        ? 'Free Delivery Unlocked'
                         : `Add ${formatPrice(remainingForFreeShipping)} more for FREE Delivery`}
                     </Text>
                   </View>

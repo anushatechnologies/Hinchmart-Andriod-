@@ -284,10 +284,10 @@ export function TwentyFourHourDeliveryScreen({ navigation }: any) {
     if (!isServiceable) {
       Alert.alert(
         '📍 24-Hr Delivery Restricted',
-        `24-Hour Express delivery is only available within Hyderabad.\n\nYour current location "${selectedSite?.name || "Selected site"}" is outside Hyderabad. Please change your delivery site.`,
+        `24-Hour Express delivery is only available within Hyderabad.\n\nYour current location "${selectedSite?.name || "Selected location"}" is outside Hyderabad. Please change your delivery address.`,
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Select Hyderabad Site', onPress: () => setLocationModalVisible(true) }
+          { text: 'Select Hyderabad Address', onPress: () => setLocationModalVisible(true) }
         ]
       );
       return;
@@ -447,7 +447,7 @@ export function TwentyFourHourDeliveryScreen({ navigation }: any) {
                   style={styles.btnGradient}
                 >
                   <Ionicons name="location" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={styles.btnPrimaryText}>Select Hyderabad Delivery Site</Text>
+                  <Text style={styles.btnPrimaryText}>Select Hyderabad Delivery Address</Text>
                 </LinearGradient>
               </TouchableOpacity>
 
