@@ -13,6 +13,7 @@ import {
   Platform,
   StatusBar,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -57,6 +58,9 @@ const WishlistCard = React.memo(function WishlistCardComponent({
 
   const hasDiscount = Boolean(item.discountPercent && item.discountPercent > 0);
   const savings = hasDiscount ? Math.max(0, (item.comparePrice ?? item.mrp ?? item.price) - item.price) : 0;
+  const rawStock = item.stockQty ?? (item as any)?.stock ?? (item as any)?.stockQuantity;
+  const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
+  const isInStock = (item as any)?.inStock !== false && (item as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
 
   const handleRemove = () => {
     Animated.sequence([
@@ -115,13 +119,20 @@ const WishlistCard = React.memo(function WishlistCardComponent({
 
           <View style={styles.cardInner}>
             {/* Image */}
-            <Image
-              source={{ uri: item.image || item.imageUrl }}
-              style={styles.productImage}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              transition={200}
-            />
+            <View style={styles.productImageWrapper}>
+              <Image
+                source={{ uri: primaryImage || item.image || item.imageUrl }}
+                style={[styles.productImage, !isInStock && { opacity: 0.55 }]}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={200}
+              />
+              {!isInStock && (
+                <View style={styles.outOfStockTag}>
+                  <Text style={styles.outOfStockTagText}>OUT OF STOCK</Text>
+                </View>
+              )}
+            </View>
 
             {/* Info */}
             <View style={styles.productInfo}>
@@ -157,18 +168,24 @@ const WishlistCard = React.memo(function WishlistCardComponent({
                 </View>
               )}
 
-              {/* Add to Cart */}
-              <TouchableOpacity style={styles.cartBtnWrap} onPress={onAddToCart} activeOpacity={0.82}>
-                <LinearGradient
-                  colors={['#EF4444', '#E31E24']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.cartBtnGradient}
-                >
-                  <Ionicons name="bag-add-outline" size={14} color="#FFFFFF" />
-                  <Text style={styles.cartBtnText}>Add to Cart</Text>
-                </LinearGradient>
-              </TouchableOpacity>
+              {/* Add to Cart / Out of Stock Disabled */}
+              {!isInStock ? (
+                <View style={[styles.cartBtnWrap, styles.cartBtnWrapDisabled]}>
+                  <Text style={styles.cartBtnTextDisabled}>Out of Stock</Text>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.cartBtnWrap} onPress={onAddToCart} activeOpacity={0.82}>
+                  <LinearGradient
+                    colors={['#EF4444', '#E31E24']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.cartBtnGradient}
+                  >
+                    <Ionicons name="bag-add-outline" size={14} color="#FFFFFF" />
+                    <Text style={styles.cartBtnText}>Add to Cart</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -308,6 +325,13 @@ export function WishlistScreen({ navigation }: any) {
 
   const handleAddToCart = useCallback(
     async (item: Product) => {
+      const rawStock = item.stockQty ?? (item as any)?.stock ?? (item as any)?.stockQuantity;
+      const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
+      const isInStock = (item as any)?.inStock !== false && (item as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
+      if (!isInStock) {
+        Alert.alert('Out of Stock', 'This product is currently out of stock.');
+        return;
+      }
       await cartManager.addToCart(
         dispatch,
         item,
@@ -522,6 +546,41 @@ const styles = StyleSheet.create({
     color: '#16A34A',
   },
   cartBtnWrap: { borderRadius: 6, overflow: 'hidden' },
+  cartBtnWrapDisabled: {
+    backgroundColor: '#94A3B8',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cartBtnTextDisabled: {
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  productImageWrapper: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 8,
+  },
+  outOfStockTag: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    backgroundColor: 'rgba(30, 41, 59, 0.85)',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 3,
+  },
+  outOfStockTagText: {
+    color: '#FFFFFF',
+    fontSize: 7.5,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
   cartBtnGradient: {
     flexDirection: 'row',
     alignItems: 'center',

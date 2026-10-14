@@ -4,7 +4,7 @@
  * Green discount badge, subtle shadow, clean add-to-cart button
  */
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ViewStyle, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ViewStyle, Platform, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
@@ -107,6 +107,10 @@ function ProductCardComponent({
       ? rawUnit
       : '';
 
+  const rawStock = product?.stockQty ?? (product as any)?.stock ?? (product as any)?.stockQuantity;
+  const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
+  const isInStock = (product as any)?.inStock !== false && (product as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
+
   const handleWishlistToggle = () => {
     const nextState = !isWishlisted;
     dispatch(toggleWishlist(productId));
@@ -122,6 +126,10 @@ function ProductCardComponent({
 
   const handleAddToCart = async (e?: any) => {
     e?.stopPropagation?.();
+    if (!isInStock) {
+      Alert.alert('Out of Stock', 'This product is currently out of stock.');
+      return;
+    }
     cartScale.value = withSpring(0.8, { damping: 8 }, () => {
       cartScale.value = withSpring(1, { damping: 12 });
     });
@@ -132,6 +140,10 @@ function ProductCardComponent({
 
   const handleIncrement = (e?: any) => {
     e?.stopPropagation?.();
+    if (!isInStock) {
+      Alert.alert('Out of Stock', 'This product is currently out of stock.');
+      return;
+    }
     cartScale.value = withSpring(1.15, { damping: 8 }, () => {
       cartScale.value = withSpring(1, { damping: 12 });
     });
@@ -194,7 +206,12 @@ function ProductCardComponent({
           ]}
         >
           <View style={[styles.listImageWrapper, { backgroundColor: isDark ? '#2A2A2A' : '#F8F9FA' }]}>
-            <Image source={{ uri: primaryImage }} style={styles.listImage} contentFit="contain" cachePolicy="memory-disk" />
+            <Image source={{ uri: primaryImage }} style={[styles.listImage, !isInStock && styles.imageOutOfStock]} contentFit="contain" cachePolicy="memory-disk" />
+            {!isInStock && (
+              <View style={styles.outOfStockBadge}>
+                <Text style={styles.outOfStockBadgeText}>OUT OF STOCK</Text>
+              </View>
+            )}
             {discountPercent && discountPercent > 0 ? (
               <View style={styles.listDiscountBadge}>
                 <Text style={styles.listDiscountText}>{discountPercent}% Off</Text>
@@ -234,7 +251,11 @@ function ProductCardComponent({
                 </View>
               </View>
 
-              {cartQuantity > 0 ? (
+              {!isInStock ? (
+                <View style={[styles.addCartBtn, styles.addCartBtnDisabled]}>
+                  <Ionicons name="close-outline" size={18} color="#FFFFFF" />
+                </View>
+              ) : cartQuantity > 0 ? (
                 <Animated.View style={[cartAnimStyle, styles.stepperWrapper]}>
                   <TouchableOpacity
                     onPress={handleDecrement}
@@ -312,7 +333,13 @@ function ProductCardComponent({
       >
         {/* Image Container */}
         <View style={[styles.gridImageWrapper, { backgroundColor: isDark ? '#2A2A2A' : '#F8F9FA' }]}>
-          <Image source={{ uri: primaryImage }} style={styles.gridImage} contentFit="contain" cachePolicy="memory-disk" />
+          <Image source={{ uri: primaryImage }} style={[styles.gridImage, !isInStock && styles.imageOutOfStock]} contentFit="contain" cachePolicy="memory-disk" />
+
+          {!isInStock && (
+            <View style={styles.outOfStockBadge}>
+              <Text style={styles.outOfStockBadgeText}>OUT OF STOCK</Text>
+            </View>
+          )}
 
           {/* Discount Badge — Top Left */}
           {discountPercent && discountPercent > 0 ? (
@@ -370,8 +397,8 @@ function ProductCardComponent({
               Save {formatPrice(comparePrice - unitPrice)}
             </Text>
           ) : (
-            <Text style={[styles.stockText, { color: theme.colors.textTertiary }]}>
-              In Stock{unitStr ? ` • ${unitStr}` : ''}
+            <Text style={[styles.stockText, { color: isInStock ? theme.colors.textTertiary : '#EF4444' }]}>
+              {isInStock ? `In Stock${unitStr ? ` • ${unitStr}` : ''}` : 'Out of Stock'}
             </Text>
           )}
 
@@ -392,7 +419,11 @@ function ProductCardComponent({
               ) : null}
             </View>
 
-            {cartQuantity > 0 ? (
+            {!isInStock ? (
+              <View style={[styles.addCartBtn, styles.addCartBtnDisabled]}>
+                <Ionicons name="close-outline" size={18} color="#FFFFFF" />
+              </View>
+            ) : cartQuantity > 0 ? (
               <Animated.View style={[cartAnimStyle, styles.stepperWrapper]}>
                 <TouchableOpacity
                   onPress={handleDecrement}
@@ -439,11 +470,17 @@ export const ProductCard = React.memo(ProductCardComponent, (prevProps, nextProp
   const nextPrice = nextProps.product?.price;
   const prevDiscount = prevProps.product?.discount || prevProps.product?.discountPercent;
   const nextDiscount = nextProps.product?.discount || nextProps.product?.discountPercent;
+  const prevStock = prevProps.product?.stockQty ?? (prevProps.product as any)?.stock;
+  const nextStock = nextProps.product?.stockQty ?? (nextProps.product as any)?.stock;
+  const prevInStock = (prevProps.product as any)?.inStock;
+  const nextInStock = (nextProps.product as any)?.inStock;
 
   return (
     prevId === nextId &&
     prevPrice === nextPrice &&
     prevDiscount === nextDiscount &&
+    prevStock === nextStock &&
+    prevInStock === nextInStock &&
     prevProps.variant === nextProps.variant
   );
 });
@@ -587,6 +624,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#E31E24',
+  },
+  addCartBtnDisabled: {
+    backgroundColor: '#94A3B8',
+    opacity: 0.85,
+  },
+  imageOutOfStock: {
+    opacity: 0.55,
+  },
+  outOfStockBadge: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    backgroundColor: 'rgba(30, 41, 59, 0.85)',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    zIndex: 2,
+  },
+  outOfStockBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   stepperWrapper: {
     flexDirection: 'row',

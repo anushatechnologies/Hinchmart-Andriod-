@@ -1153,3 +1153,71 @@ describe('PART E — Authentication Modal Dismissal & Lifecycle Regression Tests
     assert.strictEqual(selectCartItems(store.getState()).length, 0);
   });
 });
+
+describe('PART F — Out of Stock Cart Protection Tests', () => {
+  beforeEach(() => {
+    authStore.saveSession(
+      {
+        id: 7001,
+        name: 'Stock Test Contractor',
+        phone: '9876543210',
+      },
+      'fake-stock-token'
+    );
+    store.dispatch(clearCart());
+  });
+
+  afterEach(() => {
+    authStore.clearSession();
+    store.dispatch(clearCart());
+  });
+
+  test('1. Product with stockQty: 0 is rejected from being added to cart', async () => {
+    const outOfStockProduct = {
+      id: 1088,
+      productId: 1088,
+      title: 'Wakefit Latex Hybrid Pocket Spring Mattress',
+      price: 15459,
+      stockQty: 0,
+      inStock: true,
+    };
+
+    const res = await cartManager.addToCart(store.dispatch, outOfStockProduct as any, 1);
+    assert.strictEqual(res.success, false);
+    assert.strictEqual(res.error, 'Product is out of stock');
+    assert.strictEqual(selectCartItems(store.getState()).length, 0);
+  });
+
+  test('2. Product with inStock: false is rejected from being added to cart', async () => {
+    const outOfStockProduct = {
+      id: 2002,
+      productId: 2002,
+      title: 'Unavailable Timber Plank',
+      price: 850,
+      stockQty: 50,
+      inStock: false,
+    };
+
+    const res = await cartManager.addToCart(store.dispatch, outOfStockProduct as any, 1);
+    assert.strictEqual(res.success, false);
+    assert.strictEqual(res.error, 'Product is out of stock');
+    assert.strictEqual(selectCartItems(store.getState()).length, 0);
+  });
+
+  test('3. Product with active: false is rejected from being added to cart', async () => {
+    const inactiveProduct = {
+      id: 3003,
+      productId: 3003,
+      title: 'Archived Concrete Mix',
+      price: 450,
+      stockQty: 100,
+      active: false,
+    };
+
+    const res = await cartManager.addToCart(store.dispatch, inactiveProduct as any, 1);
+    assert.strictEqual(res.success, false);
+    assert.strictEqual(res.error, 'Product is out of stock');
+    assert.strictEqual(selectCartItems(store.getState()).length, 0);
+  });
+});
+

@@ -1483,6 +1483,10 @@ export function ProductDetailScreen({ route, navigation }: any) {
                   );
                   const rawRelUnit = String(relItem.unit || '').trim();
                   const relUnit = !rawRelUnit || rawRelUnit.toLowerCase() === 'default' ? 'unit' : rawRelUnit;
+                  const rawRelStock = relItem.stockQty ?? relItem.stock ?? relItem.stockQuantity;
+                  const parsedRelStock = typeof rawRelStock === 'number' ? rawRelStock : parseInt(String(rawRelStock), 10);
+                  const relIsInStock = relItem.inStock !== false && relItem.active !== false && (!isNaN(parsedRelStock) ? parsedRelStock > 0 : true);
+
                   const relCartItem = cartItems?.find(
                     (ci: any) =>
                       String(ci.productId || '') === relId ||
@@ -1513,8 +1517,13 @@ export function ProductDetailScreen({ route, navigation }: any) {
                         <ProductImageItem
                           uri={relImg}
                           fallbackUri={resolvedFallback}
-                          style={styles.amazonRelatedImage}
+                          style={[styles.amazonRelatedImage, !relIsInStock && { opacity: 0.55 }]}
                         />
+                        {!relIsInStock && (
+                          <View style={styles.amazonRelatedOosBadge}>
+                            <Text style={styles.amazonRelatedOosText}>OUT OF STOCK</Text>
+                          </View>
+                        )}
                         {hasRelDiscount && (
                           <View style={styles.amazonRelatedDiscountTag}>
                             <Text style={styles.amazonRelatedDiscountText}>{relDiscount}% off</Text>
@@ -1552,8 +1561,12 @@ export function ProductDetailScreen({ route, navigation }: any) {
                           </Text>
                         )}
 
-                        {/* Synchronized Cart Action with UI Color and Quantity Stepper */}
-                        {relCartQty > 0 ? (
+                        {/* Synchronized Cart Action with UI Color and Quantity Stepper / Out of Stock */}
+                        {!relIsInStock ? (
+                          <View style={[styles.amazonRelAddBtn, styles.amazonRelAddBtnDisabled]}>
+                            <Text style={styles.amazonRelAddTextDisabled}>Out of Stock</Text>
+                          </View>
+                        ) : relCartQty > 0 ? (
                           <View style={styles.amazonRelStepperRow}>
                             <TouchableOpacity
                               onPress={(e) => {
@@ -2875,10 +2888,39 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
+  amazonRelAddBtnDisabled: {
+    backgroundColor: '#94A3B8',
+    borderColor: '#94A3B8',
+    opacity: 0.9,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
   amazonRelAddText: {
     fontFamily: 'Inter_700Bold',
     fontSize: 11.5,
     color: '#FFFFFF',
+  },
+  amazonRelAddTextDisabled: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  amazonRelatedOosBadge: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    backgroundColor: 'rgba(30, 41, 59, 0.85)',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 3,
+  },
+  amazonRelatedOosText: {
+    color: '#FFFFFF',
+    fontSize: 7.5,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   amazonRelStepperRow: {
     marginTop: 8,

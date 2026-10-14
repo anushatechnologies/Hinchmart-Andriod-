@@ -8,6 +8,16 @@
  * - Post-authentication action resumption
  */
 import { AppDispatch } from '../../redux/store';
+
+const showAlert = (title: string, message: string) => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { Alert } = require('react-native');
+    Alert?.alert?.(title, message);
+  } catch {
+    console.warn(`[Alert] ${title}: ${message}`);
+  }
+};
 import {
   updateItemQuantity,
   removeItem,
@@ -123,6 +133,15 @@ export const cartManager = {
 
     const targetQty = Math.max(1, quantity);
     const prodStoreId = storeId || product?.storeId;
+
+    // STEP 0: Check product stock availability
+    const rawStock = product?.stockQty ?? (product as any)?.stock ?? (product as any)?.stockQuantity;
+    const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
+    const isInStock = (product as any)?.inStock !== false && (product as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
+    if (!isInStock) {
+      showAlert('Out of Stock', 'This product is currently out of stock.');
+      return { success: false, error: 'Product is out of stock' };
+    }
 
     // STEP 1: Intercept guest users and require login / registration
     if (!authStore.isAuthenticated()) {
@@ -247,12 +266,17 @@ export const cartManager = {
     }
 
     const nextQty = (pendingTargetQuantities[productId] ?? currentQty) + 1;
-    const stockQty =
-      typeof product?.stockQty === 'number'
-        ? product.stockQty
-        : parseInt(String(product?.stock ?? 99999), 10) || 99999;
+    const rawStock = product?.stockQty ?? (product as any)?.stock ?? (product as any)?.stockQuantity;
+    const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
+    const isInStock = (product as any)?.inStock !== false && (product as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
 
-    if (stockQty > 0 && nextQty > stockQty) {
+    if (!isInStock) {
+      showAlert('Out of Stock', 'This product is currently out of stock.');
+      return;
+    }
+
+    if (!isNaN(parsedStock) && parsedStock > 0 && nextQty > parsedStock) {
+      showAlert('Stock Limit Reached', `Only ${parsedStock} units available in stock.`);
       return; // Respect stock limit
     }
 

@@ -19,6 +19,7 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -91,6 +92,10 @@ const ProductGridCard = React.memo(
     const rawUnit = String(item.unit || '').trim();
     const unitText = !rawUnit || rawUnit.toLowerCase() === 'default' ? 'unit' : rawUnit;
 
+    const rawStock = item.stockQty ?? (item as any)?.stock ?? (item as any)?.stockQuantity;
+    const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
+    const isInStock = (item as any)?.inStock !== false && (item as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
+
     const handlePress = useCallback(() => onPressItem(item), [onPressItem, item]);
     const handleToggle = useCallback(
       () => onToggleWishlistItem(itemId, itemTitle),
@@ -130,10 +135,15 @@ const ProductGridCard = React.memo(
         >
           <Image
             source={{ uri: itemImage }}
-            style={styles.cardImage}
+            style={[styles.cardImage, !isInStock && styles.cardImageOutOfStock]}
             contentFit="contain"
             cachePolicy="memory-disk"
           />
+          {!isInStock && (
+            <View style={styles.outOfStockBadge}>
+              <Text style={styles.outOfStockBadgeText}>OUT OF STOCK</Text>
+            </View>
+          )}
           {discount > 0 && (
             <View style={styles.discountBadge}>
               <Text style={styles.discountText}>-{discount}%</Text>
@@ -200,8 +210,12 @@ const ProductGridCard = React.memo(
             / {unitText}
           </Text>
 
-          {/* Quick Add CTA / Quantity Stepper */}
-          {cartQuantity > 0 ? (
+          {/* Quick Add CTA / Quantity Stepper / Out of Stock Disabled */}
+          {!isInStock ? (
+            <View style={[styles.quickAddBtn, styles.quickAddBtnDisabled]}>
+              <Text style={styles.quickAddBtnDisabledText}>OUT OF STOCK</Text>
+            </View>
+          ) : cartQuantity > 0 ? (
             <View style={styles.cartStepperRow}>
               <TouchableOpacity
                 onPress={handleDec}
@@ -244,6 +258,9 @@ const ProductGridCard = React.memo(
       prev.isWishlisted === next.isWishlisted &&
       prev.isDark === next.isDark &&
       prev.item.price === next.item.price &&
+      prev.item.stockQty === next.item.stockQty &&
+      (prev.item as any)?.inStock === (next.item as any)?.inStock &&
+      (prev.item as any)?.active === (next.item as any)?.active &&
       prev.onPressItem === next.onPressItem &&
       prev.onToggleWishlistItem === next.onToggleWishlistItem &&
       prev.onQuickAddItem === next.onQuickAddItem &&
@@ -440,6 +457,13 @@ export function ProductListScreen({ route, navigation }: any) {
 
   const handleQuickAdd = useCallback(
     async (item: ApiProduct) => {
+      const rawStock = item.stockQty ?? (item as any)?.stock ?? (item as any)?.stockQuantity;
+      const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
+      const isInStock = (item as any)?.inStock !== false && (item as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
+      if (!isInStock) {
+        Alert.alert('Out of Stock', 'This product is currently out of stock.');
+        return;
+      }
       const res = await cartManager.addToCart(
         dispatch,
         item,
@@ -460,6 +484,13 @@ export function ProductListScreen({ route, navigation }: any) {
 
   const handleIncrement = useCallback(
     (item: ApiProduct) => {
+      const rawStock = item.stockQty ?? (item as any)?.stock ?? (item as any)?.stockQuantity;
+      const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
+      const isInStock = (item as any)?.inStock !== false && (item as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
+      if (!isInStock) {
+        Alert.alert('Out of Stock', 'This product is currently out of stock.');
+        return;
+      }
       const itemId = String(item.id || item.productId);
       const currentQty = cartQuantityMap[itemId] || 0;
       const cItem = cartItems.find((ci: any) => String(ci.productId || ci.id) === itemId);
@@ -1055,11 +1086,41 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     marginTop: 3,
   },
+  quickAddBtnDisabled: {
+    backgroundColor: '#94A3B8',
+    opacity: 0.9,
+  },
   quickAddBtnText: {
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
     fontWeight: '700',
     fontSize: 11,
     color: '#FFFFFF',
+  },
+  quickAddBtnDisabledText: {
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+    fontWeight: '700',
+    fontSize: 10,
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  cardImageOutOfStock: {
+    opacity: 0.55,
+  },
+  outOfStockBadge: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    backgroundColor: 'rgba(30, 41, 59, 0.85)',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  outOfStockBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 8.5,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   cartStepperRow: {
     flexDirection: 'row',
