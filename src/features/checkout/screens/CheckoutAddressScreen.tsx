@@ -76,6 +76,10 @@ import {
   RazorpayOrderData,
   RazorpaySuccessResult,
 } from '../../../components/ui/RazorpayCheckoutModal';
+import {
+  hasCartOutOfStockItems,
+  getOutOfStockItems,
+} from '../../../utils/cartStock';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -84,6 +88,7 @@ export function CheckoutAddressScreen({ navigation }: any) {
   const { theme, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const cartItems = useAppSelector(selectCartItems);
+  const hasOosItems = useMemo(() => hasCartOutOfStockItems(cartItems), [cartItems]);
   const [selectedAddr, setSelectedAddr] = useState<string | null>(null);
   const [liveAddresses, setLiveAddresses] = useState<any[]>([]);
   const [isLoadingAddresses, setIsLoadingAddresses] = useState(true);
@@ -500,6 +505,20 @@ export function CheckoutAddressScreen({ navigation }: any) {
   ) + 8;
 
   const handleProceedToPayment = () => {
+    // 0. Guard against checkout when cart contains out-of-stock items (Amazon/Flipkart/Zepto standard)
+    if (hasCartOutOfStockItems(cartItems)) {
+      const oos = getOutOfStockItems(cartItems);
+      Alert.alert(
+        '⚠️ Cannot Proceed: Items Out of Stock',
+        `Some items in your cart (${oos.map((i) => i.name || i.product?.name).join(', ')}) are currently out of stock. Please return to your cart to remove or replace them before proceeding.`,
+        [
+          { text: 'Return to Cart', onPress: () => navigation.navigate('Cart') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
     if (!selectedAddr || liveAddresses.length === 0) {
       Alert.alert(
         'Delivery Address Required',
@@ -1261,19 +1280,35 @@ export function CheckoutAddressScreen({ navigation }: any) {
           },
         ]}
       >
+        {hasOosItems && (
+          <Text
+            style={{
+              fontFamily: 'Inter_600SemiBold',
+              fontSize: 11.5,
+              color: '#DC2626',
+              textAlign: 'center',
+              marginBottom: 8,
+            }}
+          >
+            ⚠️ Cannot proceed: Items in your cart are currently out of stock
+          </Text>
+        )}
         <TouchableOpacity
           onPress={handleProceedToPayment}
-          activeOpacity={0.85}
-          style={styles.continueBtn}
+          disabled={hasOosItems}
+          activeOpacity={hasOosItems ? 1 : 0.85}
+          style={[styles.continueBtn, hasOosItems && { opacity: 0.7 }]}
         >
           <LinearGradient
-            colors={['#E31E24', '#D32F2F']}
+            colors={hasOosItems ? ['#94A3B8', '#64748B'] : ['#E31E24', '#D32F2F']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.continueBtnGradient}
           >
-            <Text style={[styles.continueBtnText, { color: '#FFFFFF' }]}>Proceed to Payment</Text>
-            <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+            <Text style={[styles.continueBtnText, { color: '#FFFFFF' }]}>
+              {hasOosItems ? 'Resolve Out of Stock Items in Cart' : 'Proceed to Payment'}
+            </Text>
+            <Ionicons name={hasOosItems ? 'alert-circle' : 'arrow-forward'} size={18} color="#FFFFFF" />
           </LinearGradient>
         </TouchableOpacity>
       </View>
@@ -1288,6 +1323,7 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
   const dispatch = useAppDispatch();
   const cartItems = useAppSelector(selectCartItems);
   const cartSubtotal = useAppSelector(selectCartSubtotal);
+  const hasPaymentOosItems = useMemo(() => hasCartOutOfStockItems(cartItems), [cartItems]);
   const cartStoreId = useAppSelector((state: any) => state.cart?.storeId);
   const cartCouponCode = useAppSelector((state: any) => state.cart?.couponCode);
   const routeAddressId = Number(route?.params?.addressId);
@@ -1436,6 +1472,19 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
   const handleStartPayment = async () => {
     if (cartItems.length === 0 || isProcessing) return;
 
+    // 0. Guard: Prevent order placement if any cart item is out of stock (Amazon/Flipkart/Zepto standard)
+    if (hasCartOutOfStockItems(cartItems)) {
+      const oos = getOutOfStockItems(cartItems);
+      Alert.alert(
+        '⚠️ Order Placement Blocked',
+        `Some items in your cart (${oos.map((i) => i.name || i.product?.name).join(', ')}) are out of stock. Please return to your cart to remove or replace them before placing your order.`,
+        [
+          { text: 'Return to Cart', onPress: () => navigation.navigate('Cart') },
+        ]
+      );
+      return;
+    }
+
     // 1. Guard order placement: Require authentication before placing order
     if (!requireAuthenticationBeforeOrder({
       navigation,
@@ -1497,6 +1546,22 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
         );
         return;
       }
+
+      // ── VERIFY SERVER CART STOCK STATUS ──
+      if (hasCartOutOfStockItems(serverCart.items)) {
+        dispatch(setServerCart(serverCart));
+        setIsProcessing(false);
+        const serverOos = getOutOfStockItems(serverCart.items);
+        Alert.alert(
+          '⚠️ Item Went Out of Stock',
+          `One or more items in your cart (${serverOos.map((i: any) => i.name || i.product?.name).join(', ')}) just went out of stock. Please return to your cart to choose alternatives or remove them before completing payment.`,
+          [
+            { text: 'Return to Cart', onPress: () => navigation.navigate('Cart') },
+          ]
+        );
+        return;
+      }
+
       // Sync Redux with the fresh server state
       dispatch(setServerCart(serverCart));
 
@@ -2252,14 +2317,28 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
           </View>
         </View>
 
+        {hasPaymentOosItems && (
+          <Text
+            style={{
+              fontFamily: 'Inter_600SemiBold',
+              fontSize: 11.5,
+              color: '#DC2626',
+              textAlign: 'center',
+              marginBottom: 8,
+            }}
+          >
+            ⚠️ Order placement disabled: Items in your cart are currently out of stock
+          </Text>
+        )}
+
         <TouchableOpacity
           onPress={handleStartPayment}
-          disabled={isProcessing}
-          activeOpacity={0.85}
-          style={[styles.payNowBtn, isProcessing && { opacity: 0.7 }]}
+          disabled={isProcessing || hasPaymentOosItems}
+          activeOpacity={hasPaymentOosItems ? 1 : 0.85}
+          style={[styles.payNowBtn, (isProcessing || hasPaymentOosItems) && { opacity: 0.7 }]}
         >
           <LinearGradient
-            colors={['#E31E24', '#D32F2F']}
+            colors={hasPaymentOosItems ? ['#94A3B8', '#64748B'] : ['#E31E24', '#D32F2F']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.payNowGradient}
@@ -2267,16 +2346,28 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
             {isProcessing ? (
               <ActivityIndicator color="#FFFFFF" size="small" style={{ marginRight: 8 }} />
             ) : (
-              <Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />
+              <Ionicons
+                name={hasPaymentOosItems ? 'alert-circle' : 'shield-checkmark'}
+                size={18}
+                color="#FFFFFF"
+              />
             )}
             <Text style={[styles.payNowBtnText, { color: '#FFFFFF' }]}>
               {isProcessing
                 ? 'Initiating Secure Gateway...'
+                : hasPaymentOosItems
+                ? 'Resolve Out of Stock Items'
                 : selectedMethod === 'cod'
                 ? 'Confirm Pay on Delivery'
                 : `Pay ${formatPrice(total)} Securely`}
             </Text>
-            {!isProcessing && <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />}
+            {!isProcessing && (
+              <Ionicons
+                name={hasPaymentOosItems ? 'close-circle' : 'arrow-forward'}
+                size={18}
+                color="#FFFFFF"
+              />
+            )}
           </LinearGradient>
         </TouchableOpacity>
       </View>

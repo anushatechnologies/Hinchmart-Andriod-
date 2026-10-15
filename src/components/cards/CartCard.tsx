@@ -21,9 +21,11 @@ export interface CartCardProps {
   quantity: number;
   unit?: string;
   specs?: string;
+  isOutOfStock?: boolean;
   onQuantityChange: (qty: number) => void;
   onRemove: () => void;
   onPress?: () => void;
+  onFindAlternatives?: () => void;
   style?: ViewStyle;
 }
 
@@ -34,9 +36,11 @@ export function CartCard({
   quantity,
   unit = 'item',
   specs,
+  isOutOfStock = false,
   onQuantityChange,
   onRemove,
   onPress,
+  onFindAlternatives,
   style,
 }: CartCardProps) {
   const { theme, isDark } = useTheme();
@@ -69,8 +73,12 @@ export function CartCard({
         style={[
           styles.cardInner,
           {
-            backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-            borderColor: isDark ? '#334155' : '#E2E8F0',
+            backgroundColor: isOutOfStock
+              ? (isDark ? '#261C1C' : '#FFF9F9')
+              : (isDark ? '#1E293B' : '#FFFFFF'),
+            borderColor: isOutOfStock
+              ? (isDark ? '#991B1B' : '#FCA5A5')
+              : (isDark ? '#334155' : '#E2E8F0'),
           },
         ]}
       >
@@ -79,7 +87,7 @@ export function CartCard({
           {image ? (
             <Image
               source={{ uri: image }}
-              style={styles.image}
+              style={[styles.image, isOutOfStock && { opacity: 0.6 }]}
               contentFit="contain"
               cachePolicy="memory-disk"
             />
@@ -92,21 +100,32 @@ export function CartCard({
         <View style={styles.detailsWrap}>
           {/* Header Row: Title & Remove Action */}
           <View style={styles.topRow}>
-            <Text
-              numberOfLines={2}
-              style={[
-                styles.titleText,
-                { color: theme.colors.textPrimary },
-              ]}
-            >
-              {name}
-            </Text>
+            <View style={{ flex: 1, marginRight: 6 }}>
+              {isOutOfStock && (
+                <View style={styles.oosBadge}>
+                  <Ionicons name="alert-circle" size={10} color="#DC2626" />
+                  <Text style={styles.oosBadgeText}>Out of Stock</Text>
+                </View>
+              )}
+              <Text
+                numberOfLines={2}
+                style={[
+                  styles.titleText,
+                  { color: theme.colors.textPrimary },
+                  isOutOfStock && { color: isDark ? '#FCA5A5' : '#991B1B' },
+                ]}
+              >
+                {name}
+              </Text>
+            </View>
 
             <TouchableOpacity
               onPress={onRemove}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               activeOpacity={0.7}
               style={styles.deleteBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Remove item"
             >
               <Ionicons name="trash-outline" size={16} color="#EF4444" />
             </TouchableOpacity>
@@ -127,20 +146,42 @@ export function CartCard({
             {formatPrice(unitPrice)} <Text style={{ fontSize: 10.5 }}>/ {unit}</Text>
           </Text>
 
-          {/* Bottom Row: Quantity Stepper & Line Total */}
+          {/* Bottom Row: Quantity Stepper or Find Alternatives */}
           <View style={styles.bottomRow}>
-            <QuantitySelector
-              value={quantity}
-              onChange={onQuantityChange}
-              size="sm"
-            />
+            {isOutOfStock ? (
+              <View style={styles.oosBottomRow}>
+                {onFindAlternatives && (
+                  <TouchableOpacity
+                    onPress={onFindAlternatives}
+                    style={styles.findAltBtn}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Find alternatives"
+                  >
+                    <Ionicons name="sparkles" size={13} color="#FFFFFF" />
+                    <Text style={styles.findAltBtnText}>Find Alternatives</Text>
+                  </TouchableOpacity>
+                )}
+                <View style={styles.totalBlock}>
+                  <Text style={[styles.totalLabel, { color: '#DC2626' }]}>Unavailable</Text>
+                </View>
+              </View>
+            ) : (
+              <>
+                <QuantitySelector
+                  value={quantity}
+                  onChange={onQuantityChange}
+                  size="sm"
+                />
 
-            <View style={styles.totalBlock}>
-              <Text style={[styles.totalLabel, { color: theme.colors.textTertiary }]}>Total</Text>
-              <Text style={[styles.totalAmount, { color: theme.colors.textPrimary }]}>
-                {formatPrice(itemTotal)}
-              </Text>
-            </View>
+                <View style={styles.totalBlock}>
+                  <Text style={[styles.totalLabel, { color: theme.colors.textTertiary }]}>Total</Text>
+                  <Text style={[styles.totalAmount, { color: theme.colors.textPrimary }]}>
+                    {formatPrice(itemTotal)}
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </View>
@@ -222,5 +263,42 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
     fontWeight: '700',
+  },
+  oosBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 3,
+  },
+  oosBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#DC2626',
+    textTransform: 'uppercase',
+  },
+  oosBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  findAltBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#059669',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    gap: 4,
+  },
+  findAltBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

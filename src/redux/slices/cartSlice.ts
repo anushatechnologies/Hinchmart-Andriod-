@@ -104,6 +104,12 @@ function mapBackendItem(bi: BackendCartItem): CartItem {
       imageUrl: img,
       images: img ? [img] : [],
       unit: bi.unit || prodObj?.unit || 'pcs',
+      stockQty: bi.stockQty ?? prodObj?.stockQty ?? (prodObj as any)?.stockQuantity,
+      inStock: bi.inStock ?? prodObj?.inStock,
+      active: bi.active ?? prodObj?.active,
+      isOutOfStock: bi.isOutOfStock,
+      subcategoryId: bi.subcategoryId ?? prodObj?.subcategoryId,
+      categoryId: bi.categoryId ?? prodObj?.categoryId,
     } as any,
     name: title,
     title: title,
@@ -120,6 +126,12 @@ function mapBackendItem(bi: BackendCartItem): CartItem {
     unit: bi.unit || prodObj?.unit || 'pcs',
     originalPrice: bi.originalPrice,
     cartItemId: cartItemId,
+    stockQty: bi.stockQty ?? prodObj?.stockQty ?? (prodObj as any)?.stockQuantity,
+    inStock: bi.inStock ?? prodObj?.inStock,
+    active: bi.active ?? prodObj?.active,
+    isOutOfStock: bi.isOutOfStock,
+    subcategoryId: bi.subcategoryId ?? prodObj?.subcategoryId,
+    categoryId: bi.categoryId ?? prodObj?.categoryId,
   } as CartItem & { cartItemId: string | number };
 }
 
@@ -381,6 +393,70 @@ const cartSlice = createSlice({
     setUseWallet: (state, action: PayloadAction<boolean>) => {
       state.useWallet = action.payload;
     },
+    updateItemStockStatus: (
+      state,
+      action: PayloadAction<{
+        idOrProductId?: string;
+        id?: string;
+        productId?: string;
+        stockQty?: number;
+        inStock?: boolean;
+        active?: boolean;
+        isOutOfStock?: boolean;
+      }>
+    ) => {
+      const targetId = action.payload.idOrProductId || action.payload.productId || action.payload.id;
+      const { stockQty, inStock, active, isOutOfStock } = action.payload;
+      for (const item of state.items) {
+        if (
+          targetId && (
+            String(item.id) === String(targetId) ||
+            String(item.productId) === String(targetId) ||
+            String((item as any).cartItemId) === String(targetId)
+          )
+        ) {
+          if (stockQty !== undefined) {
+            item.stockQty = stockQty;
+            if (item.product) (item.product as any).stockQty = stockQty;
+          }
+          if (inStock !== undefined) {
+            item.inStock = inStock;
+            if (item.product) (item.product as any).inStock = inStock;
+          }
+          if (active !== undefined) {
+            item.active = active;
+            if (item.product) (item.product as any).active = active;
+          }
+          if (isOutOfStock !== undefined) {
+            item.isOutOfStock = isOutOfStock;
+          } else {
+            const rawStock = item.stockQty ?? (item.product as any)?.stockQty;
+            const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
+            item.isOutOfStock =
+              item.inStock === false ||
+              item.active === false ||
+              (item.product as any)?.inStock === false ||
+              (item.product as any)?.active === false ||
+              (!isNaN(parsedStock) && parsedStock <= 0);
+          }
+        }
+      }
+    },
+    removeOutOfStockItems: (state) => {
+      state.items = state.items.filter((item) => {
+        const prod = (item.product || item) as any;
+        const rawStock = prod?.stockQty ?? prod?.stockQuantity ?? item.stockQty;
+        const parsed = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
+        const isOos =
+          item.isOutOfStock === true ||
+          item.active === false ||
+          item.inStock === false ||
+          prod?.active === false ||
+          prod?.inStock === false ||
+          (!isNaN(parsed) && parsed <= 0);
+        return !isOos;
+      });
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -420,6 +496,8 @@ export const {
   setUseWallet,
   setStoreInfo,
   switchStore,
+  updateItemStockStatus,
+  removeOutOfStockItems,
 } = cartSlice.actions;
 
 // Stable reference for empty fallback
@@ -475,6 +553,24 @@ export const selectCartSubtotal = (state: any) =>
 export const selectCartToast = (state: any) => state?.cart?.addedToast || null;
 export const selectAuthModal = (state: any): CartAuthModalState | null =>
   state?.cart?.authModal || null;
+
+export const selectHasOutOfStockItems = (state: any): boolean => {
+  const items = Array.isArray(state?.cart?.items) ? state.cart.items : EMPTY_CART_ITEMS;
+  return items.some((it: any) => {
+    if (!it) return false;
+    if (it.isOutOfStock === true) return true;
+    const prod = it.product || it;
+    if (prod.active === false || it.active === false) return true;
+    if (prod.inStock === false || it.inStock === false) return true;
+    if (prod.stock?.isInStock === false) return true;
+    const rawStock = prod.stockQty ?? prod.stockQuantity ?? (prod as any).stock ?? it.stockQty ?? it.stockQuantity;
+    if (rawStock !== undefined && rawStock !== null) {
+      const parsed = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
+      if (!isNaN(parsed) && parsed <= 0) return true;
+    }
+    return false;
+  });
+};
 export const selectServerTotals = (state: any) => ({
   subtotal: state?.cart?.serverSubtotal ?? 0,
   totalGst: state?.cart?.serverTotalGst ?? 0,

@@ -35,6 +35,7 @@ import {
   removeCoupon,
   removeItem,
   updateItemQuantity,
+  removeOutOfStockItems,
 } from '../../../redux/slices/cartSlice';
 import { cartApi } from '../../../services/api/cart.api';
 import { authStore } from '../../../store/authStore';
@@ -48,6 +49,7 @@ import {
 import { isHyderabadServiceable } from '../../../services/delivery/serviceability.service';
 import { DeleteConfirmationModal } from '../../../components/ui/DeleteConfirmationModal';
 import { ExploreCatalogModal } from '../../../components/ui/ExploreCatalogModal';
+import { SimilarProductsModal } from '../../../components/ui/SimilarProductsModal';
 import { shippingApi } from '../../../services/api/shipping.api';
 import { DiscountsModal } from '../../../components/ui/DiscountsModal';
 import { discountsApi } from '../../../services/api/discounts.api';
@@ -55,6 +57,12 @@ import { CustomerDiscount } from '../../../types/discount.types';
 import { couponsApi } from '../../../services/api/coupons.api';
 import { EligibleCoupon } from '../../../types/coupon.types';
 import { resolveProductImage } from '../../../hooks/useLiveProducts';
+import { ApiProduct } from '../../../types/product.types';
+import {
+  isCartItemOutOfStock,
+  getOutOfStockItems,
+  hasCartOutOfStockItems,
+} from '../../../utils/cartStock';
 
 interface CartItemCardProps {
   item: any;
@@ -63,6 +71,7 @@ interface CartItemCardProps {
   isUpdating: boolean;
   onUpdateQty: (id: string, qty: number) => void;
   onPromptDelete: (item: any, primaryImg: string, itemName: string, totalPrice: number) => void;
+  onFindAlternatives?: (item: any) => void;
 }
 
 const CartItemCard = React.memo(
@@ -73,7 +82,9 @@ const CartItemCard = React.memo(
     isUpdating,
     onUpdateQty,
     onPromptDelete,
+    onFindAlternatives,
   }: CartItemCardProps) {
+    const isOos = isCartItemOutOfStock(item);
     const itemName = item?.product?.name || item?.name || (item as any)?.productName || 'Construction Material';
     const rawImg =
       item?.image ||
@@ -122,8 +133,12 @@ const CartItemCard = React.memo(
         style={[
           styles.itemCard,
           {
-            backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-            borderColor: isDark ? '#334155' : '#E2E8F0',
+            backgroundColor: isOos
+              ? (isDark ? '#261C1C' : '#FFF9F9')
+              : (isDark ? '#1E293B' : '#FFFFFF'),
+            borderColor: isOos
+              ? (isDark ? '#991B1B' : '#FCA5A5')
+              : (isDark ? '#334155' : '#E2E8F0'),
           },
         ]}
       >
@@ -146,10 +161,17 @@ const CartItemCard = React.memo(
                 <Text style={styles.expressBadgeText}>24-Hr Express</Text>
               </View>
             )}
-            <View style={styles.stockBadge}>
-              <View style={styles.stockDot} />
-              <Text style={styles.stockBadgeText}>In Stock</Text>
-            </View>
+            {isOos ? (
+              <View style={styles.oosBadge}>
+                <Ionicons name="alert-circle" size={11} color="#DC2626" />
+                <Text style={styles.oosBadgeText}>Out of Stock</Text>
+              </View>
+            ) : (
+              <View style={styles.stockBadge}>
+                <View style={styles.stockDot} />
+                <Text style={styles.stockBadgeText}>In Stock</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -160,13 +182,15 @@ const CartItemCard = React.memo(
               styles.itemImgContainer,
               {
                 backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
-                borderColor: isDark ? '#334155' : '#E2E8F0',
+                borderColor: isOos
+                  ? (isDark ? '#7F1D1D' : '#FECACA')
+                  : (isDark ? '#334155' : '#E2E8F0'),
               },
             ]}
           >
             <Image
               source={{ uri: primaryImg }}
-              style={styles.itemImg}
+              style={[styles.itemImg, isOos && { opacity: 0.65 }]}
               contentFit="contain"
               cachePolicy="memory-disk"
               transition={150}
@@ -177,12 +201,25 @@ const CartItemCard = React.memo(
             <View style={styles.itemTitleGroup}>
               <Text
                 numberOfLines={2}
-                style={[styles.itemName, { color: theme.colors.textPrimary }]}
+                style={[
+                  styles.itemName,
+                  { color: theme.colors.textPrimary },
+                  isOos && { color: isDark ? '#FCA5A5' : '#991B1B' },
+                ]}
               >
                 {itemName}
               </Text>
 
-              {item.quantity >= 5 && (
+              {isOos && (
+                <View style={styles.oosWarningBar}>
+                  <Ionicons name="alert-circle" size={12} color="#DC2626" />
+                  <Text style={styles.oosWarningText} numberOfLines={1}>
+                    Currently unavailable. Replace or remove to checkout.
+                  </Text>
+                </View>
+              )}
+
+              {item.quantity >= 5 && !isOos && (
                 <View style={styles.tierChip}>
                   <Ionicons name="pricetag" size={11} color="#E31E24" />
                   <Text style={styles.tierChipText}>Bulk Volume Tier Applied</Text>
@@ -197,66 +234,95 @@ const CartItemCard = React.memo(
                   {formatPrice(unitPrice)} <Text style={styles.unitSuffix}>/ {itemUnit}</Text>
                 </Text>
               </View>
-              <Text style={[styles.itemTotalPrice, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
+              <Text style={[styles.itemTotalPrice, { color: isOos ? '#DC2626' : (isDark ? '#F8FAFC' : '#0F172A') }]}>
                 {formatPrice(totalPrice)}
               </Text>
             </View>
           </View>
         </View>
 
-        {/* Bottom Actions Row: Accessible Stepper & Remove Action */}
+        {/* Bottom Actions Row: Accessible Stepper or Out-of-Stock Actions */}
         <View style={[styles.itemFooterRow, { borderTopColor: isDark ? '#334155' : '#F1F5F9' }]}>
-          <View style={[styles.stepperContainer, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: isDark ? '#334155' : '#CBD5E1' }]}>
-            <TouchableOpacity
-              onPress={handleMinus}
-              disabled={isUpdating}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              style={styles.stepperActionBtn}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Decrease item quantity"
-            >
-              <Ionicons
-                name={item.quantity === 1 ? 'trash-outline' : 'remove'}
-                size={16}
-                color={item.quantity === 1 ? '#EF4444' : isDark ? '#CBD5E1' : '#334155'}
-              />
-            </TouchableOpacity>
+          {isOos ? (
+            <View style={styles.oosActionRow}>
+              <TouchableOpacity
+                onPress={() => onFindAlternatives?.(item)}
+                style={styles.findAlternativesBtn}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Find in-stock alternatives"
+              >
+                <Ionicons name="sparkles" size={14} color="#FFFFFF" />
+                <Text style={styles.findAlternativesBtnText}>Find Alternatives</Text>
+              </TouchableOpacity>
 
-            <View style={styles.stepperValueBox}>
-              {isUpdating ? (
-                <ActivityIndicator size="small" color="#E31E24" />
-              ) : (
-                <Text style={[styles.stepperValueText, { color: theme.colors.textPrimary }]}>
-                  {item.quantity}
-                </Text>
-              )}
+              <TouchableOpacity
+                onPress={handleDelete}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={[styles.deleteBtn, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2' }]}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Remove item from cart"
+              >
+                <Ionicons name="trash-outline" size={16} color="#DC2626" />
+                <Text style={styles.deleteBtnText}>Remove</Text>
+              </TouchableOpacity>
             </View>
+          ) : (
+            <>
+              <View style={[styles.stepperContainer, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: isDark ? '#334155' : '#CBD5E1' }]}>
+                <TouchableOpacity
+                  onPress={handleMinus}
+                  disabled={isUpdating}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  style={styles.stepperActionBtn}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Decrease item quantity"
+                >
+                  <Ionicons
+                    name={item.quantity === 1 ? 'trash-outline' : 'remove'}
+                    size={16}
+                    color={item.quantity === 1 ? '#EF4444' : isDark ? '#CBD5E1' : '#334155'}
+                  />
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={handlePlus}
-              disabled={isUpdating}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              style={styles.stepperActionBtn}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Increase item quantity"
-            >
-              <Ionicons name="add" size={16} color={isDark ? '#CBD5E1' : '#334155'} />
-            </TouchableOpacity>
-          </View>
+                <View style={styles.stepperValueBox}>
+                  {isUpdating ? (
+                    <ActivityIndicator size="small" color="#E31E24" />
+                  ) : (
+                    <Text style={[styles.stepperValueText, { color: theme.colors.textPrimary }]}>
+                      {item.quantity}
+                    </Text>
+                  )}
+                </View>
 
-          <TouchableOpacity
-            onPress={handleDelete}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={[styles.deleteBtn, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2' }]}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Remove item from cart"
-          >
-            <Ionicons name="trash-outline" size={16} color="#DC2626" />
-            <Text style={styles.deleteBtnText}>Remove</Text>
-          </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handlePlus}
+                  disabled={isUpdating}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  style={styles.stepperActionBtn}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Increase item quantity"
+                >
+                  <Ionicons name="add" size={16} color={isDark ? '#CBD5E1' : '#334155'} />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                onPress={handleDelete}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={[styles.deleteBtn, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2' }]}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Remove item from cart"
+              >
+                <Ionicons name="trash-outline" size={16} color="#DC2626" />
+                <Text style={styles.deleteBtnText}>Remove</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </View>
     );
@@ -266,10 +332,14 @@ const CartItemCard = React.memo(
       prev.item.id === next.item.id &&
       prev.item.quantity === next.item.quantity &&
       prev.item.totalPrice === next.item.totalPrice &&
+      prev.item.stockQty === next.item.stockQty &&
+      prev.item.inStock === next.item.inStock &&
+      prev.item.isOutOfStock === next.item.isOutOfStock &&
       prev.isDark === next.isDark &&
       prev.isUpdating === next.isUpdating &&
       prev.onUpdateQty === next.onUpdateQty &&
-      prev.onPromptDelete === next.onPromptDelete
+      prev.onPromptDelete === next.onPromptDelete &&
+      prev.onFindAlternatives === next.onFindAlternatives
     );
   }
 );
@@ -302,6 +372,8 @@ export function CartScreen({ navigation }: any) {
   } | null>(null);
   const [isClearAllModal, setIsClearAllModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [similarModalVisible, setSimilarModalVisible] = useState(false);
+  const [selectedOosItem, setSelectedOosItem] = useState<any | null>(null);
   const [isCartLoading, setIsCartLoading] = useState(false);
   const [isCartRefreshing, setIsCartRefreshing] = useState(false);
   const [cartFetchError, setCartFetchError] = useState<string | null>(null);
@@ -444,7 +516,83 @@ export function CartScreen({ navigation }: any) {
   const couponDiscountAmount = cartSummary?.couponDiscount ?? (appliedCoupon ? appliedCoupon.discount : 0);
   const total = cartItems.length === 0 ? 0 : Math.max(0, subtotal + shippingCost - couponDiscountAmount);
 
+  // Out-of-Stock cart item detection
+  const outOfStockItems = useMemo(() => getOutOfStockItems(cartItems), [cartItems]);
+  const hasOutOfStockItems = outOfStockItems.length > 0;
+
+  const handleOpenAlternatives = useCallback((item: any) => {
+    setSelectedOosItem(item);
+    setSimilarModalVisible(true);
+  }, []);
+
+  const handleRemoveAllOutOfStock = useCallback(async () => {
+    const oos = getOutOfStockItems(cartItems);
+    if (oos.length === 0) return;
+
+    dispatch(removeOutOfStockItems());
+    setToastMessage(`Removed ${oos.length} unavailable item${oos.length > 1 ? 's' : ''}`);
+
+    try {
+      for (const item of oos) {
+        const cartItemId = (item as any).cartItemId || item.id;
+        const productId = item.productId || item.id;
+        await cartApi.removeCartItem(cartItemId, productId).catch(() => {});
+      }
+      const liveCart = await cartApi.getCart();
+      if (liveCart) {
+        dispatch(setServerCart(liveCart));
+      }
+    } catch (e) {
+      if (__DEV__) console.warn('Error removing OOS items from server:', e);
+    }
+  }, [cartItems, dispatch]);
+
+  const handleReplaceOosItem = useCallback(
+    async (newProduct: ApiProduct, oosItem: any) => {
+      try {
+        const oosItemId = oosItem.id;
+        const oosCartItemId = (oosItem as any).cartItemId || oosItem.id;
+        const oosProdId = oosItem.productId || oosItem.id;
+        const newProdId = String(newProduct.id || newProduct.productId);
+        const newProdName = newProduct.name || newProduct.title || 'Product';
+
+        // 1. Remove OOS item
+        dispatch(removeItem(oosProdId));
+        dispatch(removeItem(oosItemId));
+        await cartApi.removeCartItem(oosCartItemId, oosProdId).catch(() => {});
+
+        // 2. Add replacement product
+        await cartApi.addToCart({ productId: newProdId, quantity: 1 });
+        const updated = await cartApi.getCart();
+        if (updated) {
+          dispatch(setServerCart(updated));
+        }
+        setToastMessage(`Replaced with ${newProdName}`);
+      } catch (err: any) {
+        Alert.alert('Replacement Failed', err?.message || 'Could not replace item. Please try again.');
+      }
+    },
+    [dispatch]
+  );
+
   const handleProceedToCheckout = () => {
+    // Guard: Prevent proceeding when cart contains out-of-stock items (Amazon/Flipkart/Zepto standard)
+    if (hasOutOfStockItems) {
+      Alert.alert(
+        '⚠️ Items Out of Stock',
+        `Some items in your cart (${outOfStockItems.map((i) => i.name || i.product?.name).join(', ')}) went out of stock. Please remove them or choose available alternatives before placing your order.`,
+        [
+          { text: 'OK', style: 'cancel' },
+          {
+            text: 'Remove Unavailable Items',
+            style: 'destructive',
+            onPress: handleRemoveAllOutOfStock,
+          },
+        ]
+      );
+      return;
+    }
+
     if (has24HourItems && !isSiteServiceableFor24Hr) {
       Alert.alert(
         '📍 24-Hr Delivery Restricted',
@@ -532,9 +680,10 @@ export function CartScreen({ navigation }: any) {
         isUpdating={updatingItemId === item.id}
         onUpdateQty={handleUpdateQty}
         onPromptDelete={promptDeleteItem}
+        onFindAlternatives={handleOpenAlternatives}
       />
     ),
-    [isDark, theme, updatingItemId, handleUpdateQty, promptDeleteItem]
+    [isDark, theme, updatingItemId, handleUpdateQty, promptDeleteItem, handleOpenAlternatives]
   );
 
   const cartKeyExtractor = useCallback((item: any) => String(item.id || item.productId), []);
@@ -924,6 +1073,38 @@ export function CartScreen({ navigation }: any) {
           </View>
         )}
 
+        {/* Out-of-Stock Warning Banner (Amazon / Zepto / Flipkart standard) */}
+        {hasOutOfStockItems && (
+          <View
+            style={[
+              styles.warningAlertBanner,
+              {
+                backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2',
+                borderColor: isDark ? '#7F1D1D' : '#FCA5A5',
+              },
+            ]}
+          >
+            <Ionicons name="alert-circle" size={18} color="#DC2626" style={{ marginRight: 8, marginTop: 1 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.warningAlertTitle}>
+                {outOfStockItems.length === 1 ? '1 Item is Out of Stock' : `${outOfStockItems.length} Items are Out of Stock`}
+              </Text>
+              <Text style={styles.warningAlertSub}>
+                Order placement is disabled while unavailable items remain in your cart. Remove or replace them to proceed.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleRemoveAllOutOfStock}
+              style={[styles.warningSwitchBtn, { backgroundColor: '#DC2626' }]}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Remove all unavailable items"
+            >
+              <Text style={[styles.warningSwitchBtnText, { color: '#FFFFFF' }]}>Remove</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* 24-Hr Express Serviceability Warning (Only if restricted) */}
         {has24HourItems && !isSiteServiceableFor24Hr && (
           <View style={styles.warningAlertBanner}>
@@ -1272,15 +1453,26 @@ export function CartScreen({ navigation }: any) {
                 {/* Primary Action: Proceed to Secure Checkout */}
                 <TouchableOpacity
                   onPress={handleProceedToCheckout}
-                  activeOpacity={0.88}
-                  style={styles.primaryCheckoutBtn}
+                  activeOpacity={hasOutOfStockItems ? 0.9 : 0.88}
+                  style={[
+                    styles.primaryCheckoutBtn,
+                    hasOutOfStockItems && styles.primaryCheckoutBtnDisabled,
+                  ]}
                   accessibilityRole="button"
                   accessibilityLabel="Proceed to secure checkout"
                 >
-                  <Ionicons name="lock-closed" size={16} color="#FFFFFF" />
-                  <Text style={styles.primaryCheckoutBtnText}>Proceed to Secure Checkout</Text>
-                  <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                  <Ionicons name={hasOutOfStockItems ? 'alert-circle' : 'lock-closed'} size={16} color="#FFFFFF" />
+                  <Text style={styles.primaryCheckoutBtnText}>
+                    {hasOutOfStockItems ? 'Resolve Out of Stock Items' : 'Proceed to Secure Checkout'}
+                  </Text>
+                  <Ionicons name={hasOutOfStockItems ? 'close-circle' : 'arrow-forward'} size={16} color="#FFFFFF" />
                 </TouchableOpacity>
+
+                {hasOutOfStockItems && (
+                  <Text style={styles.checkoutDisabledHelperText}>
+                    ⚠️ Checkout disabled: Remove or replace out-of-stock items to continue
+                  </Text>
+                )}
 
                 {/* Secondary Action: Bulk Project Quotation (RFQ) */}
                 <TouchableOpacity
@@ -1359,6 +1551,26 @@ export function CartScreen({ navigation }: any) {
           setIsClearAllModal(false);
         }}
         onConfirm={handleConfirmDelete}
+      />
+
+      <SimilarProductsModal
+        visible={similarModalVisible}
+        onClose={() => setSimilarModalVisible(false)}
+        outOfStockItem={selectedOosItem}
+        onReplaceWithItem={handleReplaceOosItem}
+        onRemoveItem={async (oosItem) => {
+          const oosItemId = oosItem.id;
+          const oosCartItemId = (oosItem as any).cartItemId || oosItem.id;
+          const oosProdId = oosItem.productId || oosItem.id;
+          dispatch(removeItem(oosProdId));
+          dispatch(removeItem(oosItemId));
+          await cartApi.removeCartItem(oosCartItemId, oosProdId).catch(() => {});
+          const updated = await cartApi.getCart();
+          if (updated) {
+            dispatch(setServerCart(updated));
+          }
+          setToastMessage(`Removed ${oosItem.name || 'item'} from cart`);
+        }}
       />
 
       {/* Floating Action Feedback Toast */}
@@ -2067,6 +2279,73 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
     color: '#FFFFFF',
+  },
+  oosBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  oosBadgeText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    color: '#DC2626',
+    textTransform: 'uppercase',
+  },
+  oosWarningBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginTop: 3,
+    marginBottom: 4,
+  },
+  oosWarningText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11,
+    color: '#DC2626',
+    flex: 1,
+  },
+  oosActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 10,
+  },
+  findAlternativesBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#059669',
+    height: 36,
+    borderRadius: 8,
+    gap: 6,
+    paddingHorizontal: 12,
+  },
+  findAlternativesBtnText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12.5,
+    color: '#FFFFFF',
+  },
+  primaryCheckoutBtnDisabled: {
+    backgroundColor: '#94A3B8',
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  checkoutDisabledHelperText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 11.5,
+    color: '#DC2626',
+    textAlign: 'center',
+    marginTop: 8,
   },
 });
 

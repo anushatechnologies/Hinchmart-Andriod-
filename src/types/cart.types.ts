@@ -19,6 +19,12 @@ export interface CartItem {
   originalPrice?: number;
   /** Server-assigned cart item ID used for PUT/DELETE mutations */
   cartItemId?: string | number;
+  stockQty?: number;
+  inStock?: boolean;
+  active?: boolean;
+  isOutOfStock?: boolean;
+  subcategoryId?: number | string;
+  categoryId?: number | string;
 }
 
 export interface BackendCartItem {
@@ -37,6 +43,12 @@ export interface BackendCartItem {
   totalPrice?: number;
   lineGst?: number;
   storeId?: number;
+  stockQty?: number;
+  inStock?: boolean;
+  active?: boolean;
+  isOutOfStock?: boolean;
+  subcategoryId?: number | string;
+  categoryId?: number | string;
 }
 
 export interface BackendCart {

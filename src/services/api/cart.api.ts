@@ -44,6 +44,12 @@ function normalizeCart(raw: any): BackendCart {
     const lineTotal = Number(item.lineTotal ?? item.totalPrice ?? (unitPrice * quantity));
     const cartItemId = item.cartItemId ?? item.id ?? pId;
 
+    const rawStock = item.stockQty ?? item.stockQuantity ?? (item.product as any)?.stockQty ?? (item.product as any)?.stockQuantity;
+    const parsedStock = typeof rawStock === 'number' ? rawStock : rawStock !== undefined && rawStock !== null ? parseInt(String(rawStock), 10) : undefined;
+    const inStock = item.inStock !== undefined ? Boolean(item.inStock) : (item.product as any)?.inStock !== undefined ? Boolean((item.product as any).inStock) : (parsedStock !== undefined ? parsedStock > 0 : undefined);
+    const active = item.active !== undefined ? Boolean(item.active) : (item.product as any)?.active !== undefined ? Boolean((item.product as any).active) : true;
+    const isOutOfStock = inStock === false || active === false || (parsedStock !== undefined && !isNaN(parsedStock) && parsedStock <= 0);
+
     return {
       cartItemId: cartItemId,
       productId: pId,
@@ -60,6 +66,12 @@ function normalizeCart(raw: any): BackendCart {
       totalPrice: lineTotal,
       lineGst: item.lineGst !== undefined ? Number(item.lineGst) : undefined,
       storeId: item.storeId || item.product?.storeId,
+      stockQty: parsedStock,
+      inStock: inStock,
+      active: active,
+      isOutOfStock: isOutOfStock,
+      subcategoryId: item.subcategoryId ?? (item.product as any)?.subcategoryId,
+      categoryId: item.categoryId ?? (item.product as any)?.categoryId,
     };
   });
 

@@ -20,12 +20,21 @@ import {
   selectCartSubtotal,
   selectCartToast,
   selectAuthModal,
+  removeOutOfStockItems,
+  updateItemStockStatus,
+  selectHasOutOfStockItems,
 } from '../src/redux/slices/cartSlice';
 import { cartManager } from '../src/services/cart/cartManager';
 import { cartAuthGuard } from '../src/services/cart/cartAuthGuard';
 import { cartApi } from '../src/services/api/cart.api';
 import { authStore } from '../src/store/authStore';
 import { BackendCart } from '../src/types/cart.types';
+import {
+  isCartItemOutOfStock,
+  hasCartOutOfStockItems,
+  getOutOfStockItems,
+  getInStockItems,
+} from '../src/utils/cartStock';
 
 // Sample mock products
 const sampleProductA: any = {
@@ -1342,5 +1351,157 @@ describe('PART G — Stable Cart Addition Order Tests', () => {
     assert.strictEqual(items[1].productId, 'p-3');
   });
 });
+
+describe('PART H — Out of Stock Cart Order Placement & Substitution Lifecycle Tests', () => {
+  beforeEach(() => {
+    store.dispatch(clearCart());
+    authStore.clearSession();
+  });
+
+  afterEach(() => {
+    store.dispatch(clearCart());
+    authStore.clearSession();
+  });
+
+  test('1. isCartItemOutOfStock correctly detects zero, negative, inStock:false, and inactive products', () => {
+    // Normal in stock item
+    assert.strictEqual(isCartItemOutOfStock({ id: '1', stockQty: 5, inStock: true, active: true }), false);
+
+    // Out of stock via stockQty: 0
+    assert.strictEqual(isCartItemOutOfStock({ id: '2', stockQty: 0, inStock: true, active: true }), true);
+
+    // Out of stock via negative stock
+    assert.strictEqual(isCartItemOutOfStock({ id: '3', stockQty: -2, inStock: true, active: true }), true);
+
+    // Out of stock via inStock: false
+    assert.strictEqual(isCartItemOutOfStock({ id: '4', stockQty: 10, inStock: false, active: true }), true);
+
+    // Out of stock via active: false
+    assert.strictEqual(isCartItemOutOfStock({ id: '5', stockQty: 20, inStock: true, active: false }), true);
+
+    // Out of stock via nested product fields
+    assert.strictEqual(
+      isCartItemOutOfStock({
+        id: '6',
+        product: { stockQty: 0, inStock: true, active: true },
+      }),
+      true
+    );
+  });
+
+  test('2. hasCartOutOfStockItems returns true when any cart item is out of stock', () => {
+    const items = [
+      { id: '1', name: 'Item 1', stockQty: 10, inStock: true, active: true },
+      { id: '2', name: 'Item 2', stockQty: 0, inStock: true, active: true },
+    ];
+    assert.strictEqual(hasCartOutOfStockItems(items), true);
+
+    const inStockItems = [
+      { id: '1', name: 'Item 1', stockQty: 10, inStock: true, active: true },
+      { id: '3', name: 'Item 3', stockQty: 25, inStock: true, active: true },
+    ];
+    assert.strictEqual(hasCartOutOfStockItems(inStockItems), false);
+  });
+
+  test('3. getOutOfStockItems and getInStockItems accurately partition cart items', () => {
+    const items = [
+      { id: '1', name: 'Steel Rods', stockQty: 50, inStock: true, active: true },
+      { id: '2', name: 'Cement 50kg', stockQty: 0, inStock: true, active: true },
+      { id: '3', name: 'Discontinued Paint', stockQty: 10, inStock: false, active: true },
+      { id: '4', name: 'Copper Wire', stockQty: 15, inStock: true, active: true },
+    ];
+
+    const oos = getOutOfStockItems(items);
+    assert.strictEqual(oos.length, 2);
+    assert.strictEqual(oos[0].id, '2');
+    assert.strictEqual(oos[1].id, '3');
+
+    const available = getInStockItems(items);
+    assert.strictEqual(available.length, 2);
+    assert.strictEqual(available[0].id, '1');
+    assert.strictEqual(available[1].id, '4');
+  });
+
+  test('4. removeOutOfStockItems Redux action purges all unavailable items while preserving in-stock items', () => {
+    store.dispatch(
+      setServerCart({
+        items: [
+          { cartItemId: 1, productId: 'p1', name: 'Valid In-Stock', quantity: 2, unitPrice: 500, stockQty: 10, inStock: true, active: true },
+          { cartItemId: 2, productId: 'p2', name: 'Sold Out Material', quantity: 1, unitPrice: 300, stockQty: 0, inStock: false, active: true },
+          { cartItemId: 3, productId: 'p3', name: 'Another Available', quantity: 3, unitPrice: 200, stockQty: 5, inStock: true, active: true },
+        ] as any,
+      } as any)
+    );
+
+    // Initial check: has out of stock items
+    assert.strictEqual(selectHasOutOfStockItems(store.getState()), true);
+    assert.strictEqual(selectCartItems(store.getState()).length, 3);
+
+    // Dispatch removeOutOfStockItems
+    store.dispatch(removeOutOfStockItems());
+
+    // Verified: out-of-stock item is removed, in-stock items retained
+    const remaining = selectCartItems(store.getState());
+    assert.strictEqual(remaining.length, 2);
+    assert.strictEqual(remaining[0].productId, 'p1');
+    assert.strictEqual(remaining[1].productId, 'p3');
+    assert.strictEqual(selectHasOutOfStockItems(store.getState()), false);
+  });
+
+  test('5. Order placement is disabled when item stock drops to 0, and re-enabled once replaced', () => {
+    // 1. Initial cart has an in-stock product
+    store.dispatch(
+      setServerCart({
+        items: [
+          { cartItemId: 1, productId: 'mat-1', name: 'Concrete Mix', quantity: 1, unitPrice: 400, stockQty: 10, inStock: true, active: true },
+        ] as any,
+      } as any)
+    );
+
+    let state = store.getState();
+    assert.strictEqual(selectHasOutOfStockItems(state), false);
+
+    // 2. Product stock goes to 0 (e.g. backend sync or stock update)
+    store.dispatch(updateItemStockStatus({ id: 'mat-1', stockQty: 0, inStock: false }));
+
+    state = store.getState();
+    const currentItems = selectCartItems(state);
+    assert.strictEqual(selectHasOutOfStockItems(state), true);
+    assert.strictEqual(hasCartOutOfStockItems(currentItems), true);
+
+    // Order placement condition (Amazon/Flipkart/Zepto standard): Checkout button MUST be disabled
+    const isOrderPlacementDisabled = hasCartOutOfStockItems(currentItems);
+    assert.strictEqual(isOrderPlacementDisabled, true);
+
+    // 3. User chooses alternative in-stock product and replaces the unavailable item
+    store.dispatch(removeItem('mat-1'));
+    store.dispatch(
+      setServerCart({
+        items: [
+          {
+            cartItemId: 2,
+            productId: 'mat-alt-2',
+            name: 'Alternative Premium Concrete Mix',
+            quantity: 1,
+            unitPrice: 450,
+            stockQty: 25,
+            inStock: true,
+            active: true,
+          },
+        ] as any,
+      } as any)
+    );
+
+    state = store.getState();
+    const updatedItems = selectCartItems(state);
+    assert.strictEqual(selectHasOutOfStockItems(state), false);
+    assert.strictEqual(hasCartOutOfStockItems(updatedItems), false);
+
+    // Order placement is now RE-ENABLED!
+    const isOrderPlacementEnabled = !hasCartOutOfStockItems(updatedItems);
+    assert.strictEqual(isOrderPlacementEnabled, true);
+  });
+});
+
 
 
