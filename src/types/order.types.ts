@@ -38,6 +38,9 @@ export interface CheckoutPreview {
   freightCharge: number;
   craneUnloadingCharge?: number;
   grandTotal: number;
+  items?: any[];
+  canPlaceOrder?: boolean;
+  orderBlockReason?: string | null;
 }
 
 export interface CreateOrderRequest {

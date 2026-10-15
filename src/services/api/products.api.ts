@@ -109,6 +109,15 @@ export function normalizeApiProduct(raw: any, index = 0): ApiProduct {
   const parsedMoq = typeof rawMoq === 'number' ? rawMoq : parseInt(String(rawMoq || 1), 10);
   const moq = !isNaN(parsedMoq) && parsedMoq > 0 ? parsedMoq : 1;
   const stockQty = typeof raw.stockQty === 'number' ? raw.stockQty : parseInt(String(raw.stockQty ?? raw.stock ?? 100), 10) || 0;
+  const rawAvailable = raw.availableQty ?? raw.availableQuantity ?? raw.available_qty;
+  const parsedAvailable = typeof rawAvailable === 'number' ? rawAvailable : parseInt(String(rawAvailable), 10);
+  const availableQty = !isNaN(parsedAvailable) ? parsedAvailable : stockQty;
+
+  const availabilityReason = raw.availabilityReason ?? raw.reason ?? null;
+  const isActive = raw.isActive !== false && raw.active !== false && raw.status !== 'INACTIVE';
+  const inStock = typeof raw.inStock === 'boolean'
+    ? raw.inStock
+    : (isActive && availableQty > 0 && availabilityReason === null);
 
   const rawUnit = String(raw.unit || raw.unitType || '').trim();
   const isInvalidUnit = !rawUnit || rawUnit.toLowerCase() === 'default' || rawUnit.toLowerCase() === 'null' || rawUnit.toLowerCase() === 'undefined';
@@ -149,10 +158,13 @@ export function normalizeApiProduct(raw: any, index = 0): ApiProduct {
     images: finalImages,
     imageUrls: finalImages,
     stockQty,
+    availableQty,
+    inStock,
+    availabilityReason,
     is24HourDelivery: Boolean(raw.is24HourDelivery || raw.deliveryType === '24_HOURS'),
     verified: raw.verified ?? true,
-    active: raw.isActive !== false && raw.active !== false && raw.status !== 'INACTIVE',
-    isActive: raw.isActive !== false && raw.active !== false && raw.status !== 'INACTIVE',
+    active: isActive,
+    isActive: isActive,
     bulkPricingTiers: raw.bulkPricingTiers,
     specifications: raw.specifications,
   };
@@ -375,6 +387,13 @@ export const productsApi = {
     const payload = response.data;
     const item = (payload && 'data' in payload && (payload as any).data) ? (payload as any).data : payload;
     return normalizeApiProduct(item);
+  },
+
+  /**
+   * Alias for getProductDetail
+   */
+  getProductById: async (id: string | number): Promise<ApiProduct> => {
+    return productsApi.getProductDetail(id);
   },
 
   /**

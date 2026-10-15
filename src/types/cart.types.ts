@@ -20,9 +20,12 @@ export interface CartItem {
   /** Server-assigned cart item ID used for PUT/DELETE mutations */
   cartItemId?: string | number;
   stockQty?: number;
+  availableQty?: number;
   inStock?: boolean;
   active?: boolean;
   isOutOfStock?: boolean;
+  reason?: 'CHECKOUT_DISABLED' | 'UNAVAILABLE_NO_VENDOR_STOCK' | 'INSUFFICIENT_STOCK' | 'OUT_OF_STOCK' | string | null;
+  availabilityReason?: 'CHECKOUT_DISABLED' | 'UNAVAILABLE_NO_VENDOR_STOCK' | 'INSUFFICIENT_STOCK' | 'OUT_OF_STOCK' | 'PRODUCT_INACTIVE' | string | null;
   subcategoryId?: number | string;
   categoryId?: number | string;
 }
@@ -44,9 +47,12 @@ export interface BackendCartItem {
   lineGst?: number;
   storeId?: number;
   stockQty?: number;
+  availableQty?: number;
   inStock?: boolean;
   active?: boolean;
   isOutOfStock?: boolean;
+  reason?: 'CHECKOUT_DISABLED' | 'UNAVAILABLE_NO_VENDOR_STOCK' | 'INSUFFICIENT_STOCK' | 'OUT_OF_STOCK' | string | null;
+  availabilityReason?: 'CHECKOUT_DISABLED' | 'UNAVAILABLE_NO_VENDOR_STOCK' | 'INSUFFICIENT_STOCK' | 'OUT_OF_STOCK' | 'PRODUCT_INACTIVE' | string | null;
   subcategoryId?: number | string;
   categoryId?: number | string;
 }
@@ -66,6 +72,8 @@ export interface BackendCart {
   grandTotal: number;
   totalAmount?: number;
   appliedCoupon?: string | null;
+  canCheckout?: boolean;
+  checkoutBlockReason?: string | null;
 }
 
 export interface CartState {
@@ -88,6 +96,8 @@ export interface CartState {
   totalGst?: number;
   grandTotal?: number;
   appliedCoupon?: string | null;
+  canCheckout?: boolean;
+  checkoutBlockReason?: string | null;
 }
 
 export interface CouponValidation {

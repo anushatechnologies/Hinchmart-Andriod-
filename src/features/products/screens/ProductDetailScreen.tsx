@@ -30,6 +30,7 @@ import { addItem, showCartToast, selectCartItemCount, selectCartItems, setServer
 import { toggleWishlist, selectIsWishlisted } from '../../../redux/slices/wishlistSlice';
 import { useLiveProducts, resolveProductImage } from '../../../hooks/useLiveProducts';
 import { ApiProduct } from '../../../types/product.types';
+import { getProductAvailability, getFriendlyAvailabilityReason } from '../../../utils/productAvailability';
 import { productsApi, normalizeProductImageUrl } from '../../../services/api/products.api';
 import { reviewsApi, ReviewResponseData } from '../../../services/api/reviews.api';
 import { cartApi } from '../../../services/api/cart.api';
@@ -144,9 +145,11 @@ export function ProductDetailScreen({ route, navigation }: any) {
   const unit = isInvalidUnit ? 'unit' : rawUnit;
   const sku = (passedProduct as any)?.sku || (passedProduct?.productId ? `SKU-${passedProduct.productId}` : '');
   const brand = passedProduct?.brand || '';
-  const rawStock = passedProduct?.stockQty ?? (passedProduct as any)?.stock ?? 0;
-  const stockQty = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10) || 0;
-  const isInStock = stockQty > 0;
+  const availability = useMemo(() => getProductAvailability(passedProduct), [passedProduct]);
+  const isInStock = availability.isInStock;
+  const availableQty = availability.availableQty;
+  const stockQty = availableQty;
+  const canAddToCart = availability.canAddToCart;
   
   // Real rating & reviews: ONLY display when present in product data
   const rawRating = passedProduct?.rating;
@@ -524,8 +527,8 @@ export function ProductDetailScreen({ route, navigation }: any) {
 
   const handleIncrement = () => {
     const nextQty = quantity + 1;
-    if (stockQty > 0 && nextQty > stockQty) {
-      Alert.alert('Stock Limit', `Only ${stockQty} ${unit}s available in stock.`);
+    if (availableQty > 0 && nextQty > availableQty) {
+      Alert.alert('Stock Limit', `Only ${availableQty} ${unit}${availableQty > 1 ? 's' : ''} available in stock.`);
       return;
     }
     setQuantity(nextQty);
@@ -549,8 +552,8 @@ export function ProductDetailScreen({ route, navigation }: any) {
 
   const handleQuickAddVolume = (addAmount: number) => {
     const nextQty = quantity + addAmount;
-    if (stockQty > 0 && nextQty > stockQty) {
-      Alert.alert('Stock Limit', `Only ${stockQty} ${unit}s available in stock.`);
+    if (availableQty > 0 && nextQty > availableQty) {
+      Alert.alert('Stock Limit', `Only ${availableQty} ${unit}${availableQty > 1 ? 's' : ''} available in stock.`);
       return;
     }
     setQuantity(nextQty);
@@ -585,8 +588,8 @@ export function ProductDetailScreen({ route, navigation }: any) {
   };
 
   const handleAddToCart = async () => {
-    if (!isInStock) {
-      Alert.alert('Out of Stock', 'This product is currently out of stock.');
+    if (!canAddToCart) {
+      Alert.alert(availability.friendlyReason, 'This product is currently unavailable to add to cart.');
       return;
     }
     if (quantity < moq) {
@@ -623,8 +626,8 @@ export function ProductDetailScreen({ route, navigation }: any) {
   };
 
   const handleBuyNow = async () => {
-    if (!isInStock) {
-      Alert.alert('Out of Stock', 'This product is currently out of stock.');
+    if (!canAddToCart) {
+      Alert.alert(availability.friendlyReason, 'This product is currently unavailable to order.');
       return;
     }
     if (quantity < moq) {
@@ -1124,13 +1127,13 @@ export function ProductDetailScreen({ route, navigation }: any) {
               Order within <Text style={{ color: '#007600', fontFamily: 'Inter_600SemiBold' }}>5 hrs 30 mins</Text>
             </Text>
 
-            {/* In Stock Indicator */}
-            <Text style={[styles.amazonInStockText, !isInStock && { color: '#B12704' }]}>
-              {isInStock ? `In Stock` : 'Currently unavailable'}
+            {/* Authoritative Stock & Availability Indicator */}
+            <Text style={[styles.amazonInStockText, !isInStock && { color: availability.badgeColor || '#B12704' }]}>
+              {availability.badgeText}
             </Text>
-            {isInStock && stockQty <= 10 && stockQty > 0 && (
+            {isInStock && availableQty <= 10 && availableQty > 0 && (
               <Text style={styles.amazonLowStockText}>
-                Only {stockQty} left in stock - order soon.
+                Only {availableQty} left in stock - order soon.
               </Text>
             )}
 
@@ -1167,8 +1170,8 @@ export function ProductDetailScreen({ route, navigation }: any) {
                   </Text>
                   <TouchableOpacity
                     onPress={handleIncrement}
-                    disabled={stockQty > 0 && quantity >= stockQty}
-                    style={[styles.amazonQtyBtn, stockQty > 0 && quantity >= stockQty && { opacity: 0.4 }]}
+                    disabled={!canAddToCart || (availableQty > 0 && quantity >= availableQty)}
+                    style={[styles.amazonQtyBtn, (!canAddToCart || (availableQty > 0 && quantity >= availableQty)) && { opacity: 0.4 }]}
                   >
                     <Ionicons name="add" size={16} color={isDark ? '#F8FAFC' : '#0F1111'} />
                   </TouchableOpacity>
@@ -1209,17 +1212,17 @@ export function ProductDetailScreen({ route, navigation }: any) {
             {/* Action Button 1: Add to Cart / View in Cart (Brand Crimson Red) */}
             <TouchableOpacity
               onPress={handleAddToCart}
-              disabled={!isInStock || quantity < 1}
+              disabled={!canAddToCart || quantity < 1}
               style={[
                 styles.primaryCartBtn,
-                (!isInStock || quantity < 1) && styles.actionBtnDisabled,
+                (!canAddToCart || quantity < 1) && styles.actionBtnDisabled,
               ]}
               activeOpacity={0.85}
             >
               <Ionicons name="cart" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
               <Text style={styles.primaryCartBtnText}>
-                {!isInStock
-                  ? 'Out of Stock'
+                {!canAddToCart
+                  ? availability.friendlyReason
                   : cartQuantity > 0
                   ? (quantity !== cartQuantity ? 'Update Cart' : 'View in Cart')
                   : 'Add to Cart'}
@@ -1229,11 +1232,11 @@ export function ProductDetailScreen({ route, navigation }: any) {
             {/* Action Button 2: Buy Now (Dark Slate Navy / Instant Checkout) */}
             <TouchableOpacity
               onPress={handleBuyNow}
-              disabled={!isInStock || quantity < 1}
+              disabled={!canAddToCart || quantity < 1}
               style={[
                 styles.primaryBuyNowBtn,
                 isDark && { backgroundColor: '#334155', borderColor: '#475569' },
-                (!isInStock || quantity < 1) && styles.actionBtnDisabled,
+                (!canAddToCart || quantity < 1) && styles.actionBtnDisabled,
               ]}
               activeOpacity={0.85}
             >
@@ -1418,7 +1421,7 @@ export function ProductDetailScreen({ route, navigation }: any) {
               <View style={[styles.specsTableRow, styles.specsTableBorderTop, { borderTopColor: isDark ? '#334155' : '#E7E7E7' }]}>
                 <Text style={[styles.specsTableLabel, { color: isDark ? '#94A3B8' : '#565959' }]}>Stock Status</Text>
                 <Text style={[styles.specsTableValue, { color: isInStock ? '#007600' : '#B12704', fontFamily: 'Inter_700Bold' }]}>
-                  {isInStock ? `In Stock (${stockQty} ${unit}${stockQty > 1 ? 's' : ''})` : 'Out of Stock'}
+                  {isInStock ? `In Stock (${availableQty} ${unit}${availableQty > 1 ? 's' : ''})` : availability.friendlyReason}
                 </Text>
               </View>
             </View>
@@ -1483,9 +1486,8 @@ export function ProductDetailScreen({ route, navigation }: any) {
                   );
                   const rawRelUnit = String(relItem.unit || '').trim();
                   const relUnit = !rawRelUnit || rawRelUnit.toLowerCase() === 'default' ? 'unit' : rawRelUnit;
-                  const rawRelStock = relItem.stockQty ?? relItem.stock ?? relItem.stockQuantity;
-                  const parsedRelStock = typeof rawRelStock === 'number' ? rawRelStock : parseInt(String(rawRelStock), 10);
-                  const relIsInStock = relItem.inStock !== false && relItem.active !== false && (!isNaN(parsedRelStock) ? parsedRelStock > 0 : true);
+                  const relAvailability = getProductAvailability(relItem);
+                  const relIsInStock = relAvailability.canAddToCart;
 
                   const relCartItem = cartItems?.find(
                     (ci: any) =>
@@ -1521,7 +1523,7 @@ export function ProductDetailScreen({ route, navigation }: any) {
                         />
                         {!relIsInStock && (
                           <View style={styles.amazonRelatedOosBadge}>
-                            <Text style={styles.amazonRelatedOosText}>OUT OF STOCK</Text>
+                            <Text style={styles.amazonRelatedOosText}>{relAvailability.badgeText.toUpperCase()}</Text>
                           </View>
                         )}
                         {hasRelDiscount && (
@@ -1564,7 +1566,7 @@ export function ProductDetailScreen({ route, navigation }: any) {
                         {/* Synchronized Cart Action with UI Color and Quantity Stepper / Out of Stock */}
                         {!relIsInStock ? (
                           <View style={[styles.amazonRelAddBtn, styles.amazonRelAddBtnDisabled]}>
-                            <Text style={styles.amazonRelAddTextDisabled}>Out of Stock</Text>
+                            <Text style={styles.amazonRelAddTextDisabled}>{relAvailability.friendlyReason}</Text>
                           </View>
                         ) : relCartQty > 0 ? (
                           <View style={styles.amazonRelStepperRow}>

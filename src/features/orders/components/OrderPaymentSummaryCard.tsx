@@ -101,6 +101,12 @@ export function OrderPaymentSummaryCard({
     rawPaymentStatus === 'SUCCESS' ||
     rawPaymentStatus === 'VERIFIED';
 
+  const isAuthorized = rawPaymentStatus === 'AUTHORIZED';
+  const isRefundPending = rawPaymentStatus === 'REFUND_PENDING';
+  const isRefundInProgress = rawPaymentStatus === 'REFUND_IN_PROGRESS';
+  const isRefunded = rawPaymentStatus === 'REFUNDED';
+  const isRefundFailed = rawPaymentStatus === 'REFUND_FAILED';
+
   const isPending =
     !isCod &&
     (rawPaymentStatus === 'PENDING' ||
@@ -117,6 +123,51 @@ export function OrderPaymentSummaryCard({
   const isCreditApproved = rawPaymentStatus === 'CREDIT_APPROVED';
 
   const getPaymentStatusBadge = () => {
+    if (isRefundPending) {
+      return {
+        label: 'Refund Pending',
+        color: '#D97706',
+        bg: isDark ? 'rgba(217, 119, 6, 0.15)' : '#FEF3C7',
+        icon: 'time-outline' as const,
+      };
+    }
+
+    if (isRefundInProgress) {
+      return {
+        label: 'Refund in Progress',
+        color: '#2563EB',
+        bg: isDark ? 'rgba(37, 99, 235, 0.15)' : '#DBEAFE',
+        icon: 'sync-outline' as const,
+      };
+    }
+
+    if (isRefunded) {
+      return {
+        label: 'Refunded',
+        color: '#059669',
+        bg: isDark ? 'rgba(5, 150, 105, 0.15)' : '#DCFCE7',
+        icon: 'checkmark-circle-outline' as const,
+      };
+    }
+
+    if (isRefundFailed) {
+      return {
+        label: 'Refund Failed (Pending Retry)',
+        color: '#DC2626',
+        bg: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEE2E2',
+        icon: 'alert-circle-outline' as const,
+      };
+    }
+
+    if (isAuthorized) {
+      return {
+        label: 'Authorized',
+        color: '#2563EB',
+        bg: isDark ? 'rgba(37, 99, 235, 0.15)' : '#DBEAFE',
+        icon: 'shield-outline' as const,
+      };
+    }
+
     if (isCod) {
       if (isPaid) {
         return {
@@ -222,13 +273,16 @@ export function OrderPaymentSummaryCard({
   let amountPaid = 0;
   let amountDue = grandTotal;
 
-  if (isPaid) {
+  if (isPaid || isAuthorized) {
     amountPaid = grandTotal;
+    amountDue = 0;
+  } else if (isRefunded) {
+    amountPaid = 0;
     amountDue = 0;
   } else if (isCod) {
     amountPaid = 0;
     amountDue = grandTotal;
-  } else if (isPending || isFailed) {
+  } else if (isPending || isFailed || isRefundPending || isRefundFailed) {
     amountPaid = 0;
     amountDue = grandTotal;
   }

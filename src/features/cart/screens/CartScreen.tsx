@@ -62,7 +62,10 @@ import {
   isCartItemOutOfStock,
   getOutOfStockItems,
   hasCartOutOfStockItems,
+  getCartItemUnavailableReason,
 } from '../../../utils/cartStock';
+import { getFriendlyAvailabilityReason } from '../../../utils/productAvailability';
+import { decodeCartErrorMessage, cartManager } from '../../../services/cart/cartManager';
 
 interface CartItemCardProps {
   item: any;
@@ -85,6 +88,7 @@ const CartItemCard = React.memo(
     onFindAlternatives,
   }: CartItemCardProps) {
     const isOos = isCartItemOutOfStock(item);
+    const unavailableReason = isOos ? getCartItemUnavailableReason(item) : null;
     const itemName = item?.product?.name || item?.name || (item as any)?.productName || 'Construction Material';
     const rawImg =
       item?.image ||
@@ -121,8 +125,13 @@ const CartItemCard = React.memo(
     }, [onPromptDelete, onUpdateQty, item, primaryImg, itemName, totalPrice]);
 
     const handlePlus = useCallback(() => {
+      const avail = item?.availableQty ?? item?.availableQuantity ?? item?.product?.availableQty;
+      if (typeof avail === 'number' && avail > 0 && item.quantity >= avail) {
+        Alert.alert('Stock Limit', `Only ${avail} units available in stock.`);
+        return;
+      }
       onUpdateQty(item.id, item.quantity + 1);
-    }, [onUpdateQty, item.id, item.quantity]);
+    }, [onUpdateQty, item.id, item.quantity, item?.availableQty, item?.availableQuantity, item?.product?.availableQty]);
 
     const handleDelete = useCallback(() => {
       onPromptDelete(item, primaryImg, itemName, totalPrice);
@@ -164,7 +173,7 @@ const CartItemCard = React.memo(
             {isOos ? (
               <View style={styles.oosBadge}>
                 <Ionicons name="alert-circle" size={11} color="#DC2626" />
-                <Text style={styles.oosBadgeText}>Out of Stock</Text>
+                <Text style={styles.oosBadgeText}>{unavailableReason || 'Out of Stock'}</Text>
               </View>
             ) : (
               <View style={styles.stockBadge}>
@@ -214,7 +223,7 @@ const CartItemCard = React.memo(
                 <View style={styles.oosWarningBar}>
                   <Ionicons name="alert-circle" size={12} color="#DC2626" />
                   <Text style={styles.oosWarningText} numberOfLines={1}>
-                    Currently unavailable. Replace or remove to checkout.
+                    {unavailableReason || 'Currently unavailable'}. Replace or remove to checkout.
                   </Text>
                 </View>
               )}
@@ -299,9 +308,12 @@ const CartItemCard = React.memo(
 
                 <TouchableOpacity
                   onPress={handlePlus}
-                  disabled={isUpdating}
+                  disabled={isUpdating || (typeof item?.availableQty === 'number' && item.availableQty > 0 && item.quantity >= item.availableQty)}
                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  style={styles.stepperActionBtn}
+                  style={[
+                    styles.stepperActionBtn,
+                    (typeof item?.availableQty === 'number' && item.availableQty > 0 && item.quantity >= item.availableQty) && { opacity: 0.4 },
+                  ]}
                   activeOpacity={0.7}
                   accessibilityRole="button"
                   accessibilityLabel="Increase item quantity"
@@ -333,6 +345,8 @@ const CartItemCard = React.memo(
       prev.item.quantity === next.item.quantity &&
       prev.item.totalPrice === next.item.totalPrice &&
       prev.item.stockQty === next.item.stockQty &&
+      prev.item.availableQty === next.item.availableQty &&
+      prev.item.reason === next.item.reason &&
       prev.item.inStock === next.item.inStock &&
       prev.item.isOutOfStock === next.item.isOutOfStock &&
       prev.isDark === next.isDark &&
@@ -349,6 +363,8 @@ export function CartScreen({ navigation }: any) {
   const dispatch = useAppDispatch();
   const cartItems = useAppSelector(selectCartItems);
   const subtotal = useAppSelector(selectCartSubtotal);
+  const canCheckout = useAppSelector((state: any) => state.cart?.canCheckout ?? true);
+  const checkoutBlockReason = useAppSelector((state: any) => state.cart?.checkoutBlockReason ?? null);
 
   const [deliverySite, setDeliverySite] = useState<DeliverySite | null>(null);
   const hasUserSelectedSiteRef = useRef<boolean>(false);
@@ -576,7 +592,17 @@ export function CartScreen({ navigation }: any) {
   );
 
   const handleProceedToCheckout = () => {
-    // Guard: Prevent proceeding when cart contains out-of-stock items (Amazon/Flipkart/Zepto standard)
+    // Guard: Prevent proceeding when checkout is disabled on cart or items are out-of-stock
+    if (!canCheckout) {
+      const friendlyBlock = getFriendlyAvailabilityReason(checkoutBlockReason);
+      Alert.alert(
+        'Checkout Disabled',
+        friendlyBlock || 'Checkout is temporarily disabled for items in your cart. Please review your cart before proceeding.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     if (hasOutOfStockItems) {
       Alert.alert(
         '⚠️ Items Out of Stock',
@@ -656,14 +682,11 @@ export function CartScreen({ navigation }: any) {
         }
       } catch (err: any) {
         console.warn('[CartScreen] handleUpdateQty error:', err?.message);
-        const errMsg = String(err?.response?.data?.message || err?.message || '').toLowerCase();
-        if (
-          !errMsg.includes('database transaction') &&
-          !errMsg.includes('transaction') &&
-          !errMsg.includes('rollback')
-        ) {
-          Alert.alert('Update Failed', err?.message || 'Could not update item quantity. Please try again.');
-        }
+        const friendlyError = decodeCartErrorMessage(err);
+        Alert.alert('Stock Update', friendlyError);
+        try {
+          await cartManager.loadServerCart(dispatch);
+        } catch {}
       } finally {
         setUpdatingItemId(null);
       }
@@ -1453,24 +1476,28 @@ export function CartScreen({ navigation }: any) {
                 {/* Primary Action: Proceed to Secure Checkout */}
                 <TouchableOpacity
                   onPress={handleProceedToCheckout}
-                  activeOpacity={hasOutOfStockItems ? 0.9 : 0.88}
+                  activeOpacity={(!canCheckout || hasOutOfStockItems) ? 0.9 : 0.88}
                   style={[
                     styles.primaryCheckoutBtn,
-                    hasOutOfStockItems && styles.primaryCheckoutBtnDisabled,
+                    (!canCheckout || hasOutOfStockItems) && styles.primaryCheckoutBtnDisabled,
                   ]}
                   accessibilityRole="button"
                   accessibilityLabel="Proceed to secure checkout"
                 >
-                  <Ionicons name={hasOutOfStockItems ? 'alert-circle' : 'lock-closed'} size={16} color="#FFFFFF" />
+                  <Ionicons name={(!canCheckout || hasOutOfStockItems) ? 'alert-circle' : 'lock-closed'} size={16} color="#FFFFFF" />
                   <Text style={styles.primaryCheckoutBtnText}>
-                    {hasOutOfStockItems ? 'Resolve Out of Stock Items' : 'Proceed to Secure Checkout'}
+                    {!canCheckout
+                      ? getFriendlyAvailabilityReason(checkoutBlockReason)
+                      : hasOutOfStockItems
+                      ? 'Resolve Out of Stock Items'
+                      : 'Proceed to Secure Checkout'}
                   </Text>
-                  <Ionicons name={hasOutOfStockItems ? 'close-circle' : 'arrow-forward'} size={16} color="#FFFFFF" />
+                  <Ionicons name={(!canCheckout || hasOutOfStockItems) ? 'close-circle' : 'arrow-forward'} size={16} color="#FFFFFF" />
                 </TouchableOpacity>
 
-                {hasOutOfStockItems && (
+                {(!canCheckout || hasOutOfStockItems) && (
                   <Text style={styles.checkoutDisabledHelperText}>
-                    ⚠️ Checkout disabled: Remove or replace out-of-stock items to continue
+                    ⚠️ Checkout disabled: {!canCheckout ? getFriendlyAvailabilityReason(checkoutBlockReason) : 'Remove or replace out-of-stock items to continue'}
                   </Text>
                 )}
 

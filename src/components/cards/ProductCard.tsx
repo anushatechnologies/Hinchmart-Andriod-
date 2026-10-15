@@ -24,6 +24,7 @@ import {
 } from '../../redux/slices/cartSlice';
 import { wishlistApi } from '../../services/api/wishlist.api';
 import { resolveProductImage } from '../../hooks/useLiveProducts';
+import { getProductAvailability } from '../../utils/productAvailability';
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -83,10 +84,11 @@ function ProductCardComponent({
       ? (product as any).discount
       : 0;
 
-  const brandName =
+  const rawBrand =
     typeof product?.brand === 'string'
-      ? product.brand
-      : (product?.brand as any)?.name || 'HINCH DIRECT';
+      ? product.brand.trim()
+      : (product?.brand as any)?.name ? String((product?.brand as any).name).trim() : '';
+  const brandName = rawBrand || product?.categoryName || product?.subcategoryName || '';
 
   const ratingVal =
     typeof product?.rating === 'number'
@@ -107,9 +109,9 @@ function ProductCardComponent({
       ? rawUnit
       : '';
 
-  const rawStock = product?.stockQty ?? (product as any)?.stock ?? (product as any)?.stockQuantity;
-  const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
-  const isInStock = (product as any)?.inStock !== false && (product as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
+  const availability = React.useMemo(() => getProductAvailability(product), [product]);
+  const isInStock = availability.isInStock;
+  const canAddToCart = availability.canAddToCart;
 
   const handleWishlistToggle = () => {
     const nextState = !isWishlisted;
@@ -126,8 +128,8 @@ function ProductCardComponent({
 
   const handleAddToCart = async (e?: any) => {
     e?.stopPropagation?.();
-    if (!isInStock) {
-      Alert.alert('Out of Stock', 'This product is currently out of stock.');
+    if (!canAddToCart) {
+      Alert.alert(availability.friendlyReason, 'This product is currently unavailable to add to cart.');
       return;
     }
     cartScale.value = withSpring(0.8, { damping: 8 }, () => {
@@ -140,8 +142,12 @@ function ProductCardComponent({
 
   const handleIncrement = (e?: any) => {
     e?.stopPropagation?.();
-    if (!isInStock) {
-      Alert.alert('Out of Stock', 'This product is currently out of stock.');
+    if (!canAddToCart) {
+      Alert.alert(availability.friendlyReason, 'This product is currently unavailable.');
+      return;
+    }
+    if (availability.availableQty > 0 && cartQuantity >= availability.availableQty) {
+      Alert.alert('Stock Limit', `Only ${availability.availableQty} units available in stock.`);
       return;
     }
     cartScale.value = withSpring(1.15, { damping: 8 }, () => {
@@ -209,7 +215,7 @@ function ProductCardComponent({
             <Image source={{ uri: primaryImage }} style={[styles.listImage, !isInStock && styles.imageOutOfStock]} contentFit="contain" cachePolicy="memory-disk" />
             {!isInStock && (
               <View style={styles.outOfStockBadge}>
-                <Text style={styles.outOfStockBadgeText}>OUT OF STOCK</Text>
+                <Text style={styles.outOfStockBadgeText}>{availability.badgeText.toUpperCase()}</Text>
               </View>
             )}
             {discountPercent && discountPercent > 0 ? (
@@ -220,9 +226,11 @@ function ProductCardComponent({
           </View>
 
           <View style={styles.listDetails}>
-            <Text numberOfLines={1} style={[styles.brandLabel, { color: theme.colors.textTertiary }]}>
-              {brandName}
-            </Text>
+            {brandName ? (
+              <Text numberOfLines={1} style={[styles.brandLabel, { color: theme.colors.textTertiary }]}>
+                {brandName}
+              </Text>
+            ) : null}
             <Text
               numberOfLines={2}
               style={[styles.listProductName, { color: theme.colors.textPrimary }]}
@@ -337,7 +345,7 @@ function ProductCardComponent({
 
           {!isInStock && (
             <View style={styles.outOfStockBadge}>
-              <Text style={styles.outOfStockBadgeText}>OUT OF STOCK</Text>
+              <Text style={styles.outOfStockBadgeText}>{availability.badgeText.toUpperCase()}</Text>
             </View>
           )}
 
@@ -376,9 +384,11 @@ function ProductCardComponent({
         {/* Content */}
         <View style={styles.gridContent}>
           {/* Brand */}
-          <Text numberOfLines={1} style={[styles.brandLabel, { color: theme.colors.textTertiary }]}>
-            {brandName}
-          </Text>
+          {brandName ? (
+            <Text numberOfLines={1} style={[styles.brandLabel, { color: theme.colors.textTertiary }]}>
+              {brandName}
+            </Text>
+          ) : null}
 
           {/* Product Name */}
           <Text
@@ -397,8 +407,8 @@ function ProductCardComponent({
               Save {formatPrice(comparePrice - unitPrice)}
             </Text>
           ) : (
-            <Text style={[styles.stockText, { color: isInStock ? theme.colors.textTertiary : '#EF4444' }]}>
-              {isInStock ? `In Stock${unitStr ? ` • ${unitStr}` : ''}` : 'Out of Stock'}
+            <Text style={[styles.stockText, { color: isInStock ? (availability.badgeVariant === 'low_stock' ? '#D97706' : theme.colors.textTertiary) : '#EF4444' }]}>
+              {availability.badgeText + (unitStr ? ` • ${unitStr}` : '')}
             </Text>
           )}
 
@@ -474,6 +484,10 @@ export const ProductCard = React.memo(ProductCardComponent, (prevProps, nextProp
   const nextStock = nextProps.product?.stockQty ?? (nextProps.product as any)?.stock;
   const prevInStock = (prevProps.product as any)?.inStock;
   const nextInStock = (nextProps.product as any)?.inStock;
+  const prevAvailable = (prevProps.product as any)?.availableQty;
+  const nextAvailable = (nextProps.product as any)?.availableQty;
+  const prevReason = (prevProps.product as any)?.availabilityReason;
+  const nextReason = (nextProps.product as any)?.availabilityReason;
 
   return (
     prevId === nextId &&
@@ -481,6 +495,8 @@ export const ProductCard = React.memo(ProductCardComponent, (prevProps, nextProp
     prevDiscount === nextDiscount &&
     prevStock === nextStock &&
     prevInStock === nextInStock &&
+    prevAvailable === nextAvailable &&
+    prevReason === nextReason &&
     prevProps.variant === nextProps.variant
   );
 });

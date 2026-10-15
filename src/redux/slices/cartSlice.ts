@@ -5,6 +5,7 @@
  */
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { CartItem, BackendCart, BackendCartItem } from '../../types/cart.types';
+import { hasCartOutOfStockItems } from '../../utils/cartStock';
 
 interface AddedToast {
   visible: boolean;
@@ -44,6 +45,8 @@ interface CartState {
   serverTotalGst: number;
   serverDeliveryCharge: number;
   serverGrandTotal: number;
+  canCheckout?: boolean;
+  checkoutBlockReason?: string | null;
 }
 
 const initialState: CartState = {
@@ -63,6 +66,8 @@ const initialState: CartState = {
   serverTotalGst: 0,
   serverDeliveryCharge: 0,
   serverGrandTotal: 0,
+  canCheckout: true,
+  checkoutBlockReason: null,
 };
 
 /**
@@ -105,6 +110,8 @@ function mapBackendItem(bi: BackendCartItem): CartItem {
       images: img ? [img] : [],
       unit: bi.unit || prodObj?.unit || 'pcs',
       stockQty: bi.stockQty ?? prodObj?.stockQty ?? (prodObj as any)?.stockQuantity,
+      availableQty: bi.availableQty ?? prodObj?.availableQty,
+      availabilityReason: bi.availabilityReason ?? bi.reason ?? prodObj?.availabilityReason,
       inStock: bi.inStock ?? prodObj?.inStock,
       active: bi.active ?? prodObj?.active,
       isOutOfStock: bi.isOutOfStock,
@@ -127,6 +134,9 @@ function mapBackendItem(bi: BackendCartItem): CartItem {
     originalPrice: bi.originalPrice,
     cartItemId: cartItemId,
     stockQty: bi.stockQty ?? prodObj?.stockQty ?? (prodObj as any)?.stockQuantity,
+    availableQty: bi.availableQty ?? prodObj?.availableQty,
+    reason: bi.reason ?? bi.availabilityReason ?? prodObj?.availabilityReason,
+    availabilityReason: bi.availabilityReason ?? bi.reason ?? prodObj?.availabilityReason,
     inStock: bi.inStock ?? prodObj?.inStock,
     active: bi.active ?? prodObj?.active,
     isOutOfStock: bi.isOutOfStock,
@@ -195,6 +205,8 @@ const cartSlice = createSlice({
       state.serverTotalGst = Number(cart?.totalGst || 0);
       state.serverDeliveryCharge = Number(cart?.deliveryCharge || 0);
       state.serverGrandTotal = Number(cart?.grandTotal || 0);
+      state.canCheckout = cart?.canCheckout ?? true;
+      state.checkoutBlockReason = cart?.checkoutBlockReason ?? null;
     },
 
     /**
@@ -556,21 +568,11 @@ export const selectAuthModal = (state: any): CartAuthModalState | null =>
 
 export const selectHasOutOfStockItems = (state: any): boolean => {
   const items = Array.isArray(state?.cart?.items) ? state.cart.items : EMPTY_CART_ITEMS;
-  return items.some((it: any) => {
-    if (!it) return false;
-    if (it.isOutOfStock === true) return true;
-    const prod = it.product || it;
-    if (prod.active === false || it.active === false) return true;
-    if (prod.inStock === false || it.inStock === false) return true;
-    if (prod.stock?.isInStock === false) return true;
-    const rawStock = prod.stockQty ?? prod.stockQuantity ?? (prod as any).stock ?? it.stockQty ?? it.stockQuantity;
-    if (rawStock !== undefined && rawStock !== null) {
-      const parsed = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
-      if (!isNaN(parsed) && parsed <= 0) return true;
-    }
-    return false;
-  });
+  return hasCartOutOfStockItems(items);
 };
+
+export const selectCanCheckout = (state: any): boolean => state?.cart?.canCheckout ?? true;
+export const selectCheckoutBlockReason = (state: any): string | null => state?.cart?.checkoutBlockReason ?? null;
 export const selectServerTotals = (state: any) => ({
   subtotal: state?.cart?.serverSubtotal ?? 0,
   totalGst: state?.cart?.serverTotalGst ?? 0,

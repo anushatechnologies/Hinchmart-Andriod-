@@ -31,6 +31,33 @@ import { authStore } from '../../store/authStore';
 import { cartAuthGuard } from './cartAuthGuard';
 import { ApiProduct } from '../../types/product.types';
 import { BackendCart } from '../../types/cart.types';
+import { getProductAvailability, getFriendlyAvailabilityReason } from '../../utils/productAvailability';
+
+/**
+ * Decodes 409 and server error codes into customer-friendly explanations
+ */
+export function decodeCartErrorMessage(err: any): string {
+  const status = err?.response?.status;
+  const rawMsg = String(err?.response?.data?.message || err?.message || '');
+  const cleanMsg = rawMsg.toUpperCase();
+
+  if (cleanMsg.includes('CHECKOUT_DISABLED')) {
+    return 'Temporarily unavailable: checkout for this item is currently disabled.';
+  }
+  if (cleanMsg.includes('UNAVAILABLE_NO_VENDOR_STOCK')) {
+    return 'Currently unavailable: no vendor inventory available.';
+  }
+  if (cleanMsg.includes('INSUFFICIENT_STOCK')) {
+    return 'Insufficient stock available for requested quantity.';
+  }
+  if (cleanMsg.includes('PRODUCT_INACTIVE')) {
+    return 'This product is no longer available.';
+  }
+  if (status === 409) {
+    return rawMsg || 'Selected quantity exceeds available stock.';
+  }
+  return rawMsg || 'Failed to update cart. Please try again.';
+}
 
 // In-flight add-to-cart requests per product ID to prevent duplicate submissions
 const inFlightAddRequests = new Set<string>();
@@ -135,13 +162,15 @@ export const cartManager = {
     const targetQty = Math.max(1, quantity);
     const prodStoreId = storeId || product?.storeId;
 
-    // STEP 0: Check product stock availability
-    const rawStock = product?.stockQty ?? (product as any)?.stock ?? (product as any)?.stockQuantity;
-    const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
-    const isInStock = (product as any)?.inStock !== false && (product as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
-    if (!isInStock) {
-      showAlert('Out of Stock', 'This product is currently out of stock.');
+    // STEP 0: Check authoritative product availability
+    const availability = getProductAvailability(product);
+    if (!availability.canAddToCart) {
+      showAlert(availability.friendlyReason, 'This product is currently unavailable to add to cart.');
       return { success: false, error: 'Product is out of stock' };
+    }
+    if (availability.availableQty > 0 && targetQty > availability.availableQty) {
+      showAlert('Stock Limit Reached', `Only ${availability.availableQty} units available in stock.`);
+      return { success: false, error: `Only ${availability.availableQty} units available` };
     }
 
     // STEP 1: Intercept guest users and require login / registration
@@ -221,10 +250,14 @@ export const cartManager = {
       return { success: true };
     } catch (err: any) {
       console.warn('[cartManager] Server addToCart error:', err?.message);
-      // Keep cart state consistent: do NOT add item if server rejected
+      const friendlyError = decodeCartErrorMessage(err);
+      showAlert('Cart Error', friendlyError);
+      try {
+        await cartManager.loadServerCart(dispatch);
+      } catch {}
       return {
         success: false,
-        error: err?.message || 'Failed to add item to cart. Please try again.',
+        error: friendlyError,
       };
     } finally {
       inFlightAddRequests.delete(productId);
@@ -270,17 +303,15 @@ export const cartManager = {
     }
 
     const nextQty = (pendingTargetQuantities[productId] ?? currentQty) + 1;
-    const rawStock = product?.stockQty ?? (product as any)?.stock ?? (product as any)?.stockQuantity;
-    const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
-    const isInStock = (product as any)?.inStock !== false && (product as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
+    const availability = getProductAvailability(product);
 
-    if (!isInStock) {
-      showAlert('Out of Stock', 'This product is currently out of stock.');
+    if (!availability.canAddToCart) {
+      showAlert(availability.friendlyReason, 'This product is currently unavailable.');
       return;
     }
 
-    if (!isNaN(parsedStock) && parsedStock > 0 && nextQty > parsedStock) {
-      showAlert('Stock Limit Reached', `Only ${parsedStock} units available in stock.`);
+    if (availability.availableQty > 0 && nextQty > availability.availableQty) {
+      showAlert('Stock Limit Reached', `Only ${availability.availableQty} units available in stock.`);
       return; // Respect stock limit
     }
 
@@ -315,12 +346,11 @@ export const cartManager = {
           }
         } catch (err: any) {
           console.warn('[cartManager] Server increment error:', err?.message);
+          const friendlyError = decodeCartErrorMessage(err);
+          showAlert('Stock Limit', friendlyError);
           // Rollback: Reconcile with latest server cart to keep state consistent
           try {
-            const rollbackCart = await cartApi.getCart();
-            if (rollbackCart && isCurrentSessionValid(requestEpoch, requestUserId)) {
-              dispatch(setServerCart(rollbackCart));
-            }
+            await cartManager.loadServerCart(dispatch);
           } catch {}
         }
       }
@@ -447,6 +477,15 @@ export const cartManager = {
     }
 
     const safeQty = Math.max(0, targetQty);
+    const availability = getProductAvailability(product);
+    if (safeQty > 0 && !availability.canAddToCart) {
+      showAlert(availability.friendlyReason, 'This product is currently unavailable.');
+      return;
+    }
+    if (availability.availableQty > 0 && safeQty > availability.availableQty) {
+      showAlert('Stock Limit Reached', `Only ${availability.availableQty} units available in stock.`);
+      return;
+    }
 
     if (debounceTimers[productId]) {
       clearTimeout(debounceTimers[productId]);
@@ -498,7 +537,14 @@ export const cartManager = {
           if (liveCart && isCurrentSessionValid(requestEpoch, requestUserId)) {
             dispatch(setServerCart(liveCart));
           }
-        } catch (err: any) {}
+        } catch (err: any) {
+          console.warn('[cartManager] Server setQuantity error:', err?.message);
+          const friendlyError = decodeCartErrorMessage(err);
+          showAlert('Stock Limit', friendlyError);
+          try {
+            await cartManager.loadServerCart(dispatch);
+          } catch {}
+        }
       }
     }, 320);
   },

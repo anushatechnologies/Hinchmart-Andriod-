@@ -11,6 +11,9 @@ export interface ApiProduct {
   price: number;
   mrp?: number;
   stockQty: number;
+  availableQty?: number;
+  inStock?: boolean;
+  availabilityReason?: 'CHECKOUT_DISABLED' | 'UNAVAILABLE_NO_VENDOR_STOCK' | 'PRODUCT_INACTIVE' | 'OUT_OF_STOCK' | string | null;
   unit: string;
   imageUrl: string;
   images?: string[];
@@ -149,6 +152,9 @@ export interface Product {
   rating: ProductRating;
   reviewCount: number;
   stock: StockInfo;
+  availableQty?: number;
+  inStock?: boolean;
+  availabilityReason?: 'CHECKOUT_DISABLED' | 'UNAVAILABLE_NO_VENDOR_STOCK' | 'PRODUCT_INACTIVE' | 'OUT_OF_STOCK' | string | null;
   tags: string[];
   isFeatured: boolean;
   isTrending: boolean;

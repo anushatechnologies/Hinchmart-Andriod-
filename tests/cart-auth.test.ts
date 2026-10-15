@@ -23,8 +23,10 @@ import {
   removeOutOfStockItems,
   updateItemStockStatus,
   selectHasOutOfStockItems,
+  selectCanCheckout,
+  selectCheckoutBlockReason,
 } from '../src/redux/slices/cartSlice';
-import { cartManager } from '../src/services/cart/cartManager';
+import { cartManager, decodeCartErrorMessage } from '../src/services/cart/cartManager';
 import { cartAuthGuard } from '../src/services/cart/cartAuthGuard';
 import { cartApi } from '../src/services/api/cart.api';
 import { authStore } from '../src/store/authStore';
@@ -34,7 +36,12 @@ import {
   hasCartOutOfStockItems,
   getOutOfStockItems,
   getInStockItems,
+  getCartItemUnavailableReason,
 } from '../src/utils/cartStock';
+import {
+  getProductAvailability,
+  getFriendlyAvailabilityReason,
+} from '../src/utils/productAvailability';
 
 // Sample mock products
 const sampleProductA: any = {
@@ -1500,6 +1507,154 @@ describe('PART H — Out of Stock Cart Order Placement & Substitution Lifecycle 
     // Order placement is now RE-ENABLED!
     const isOrderPlacementEnabled = !hasCartOutOfStockItems(updatedItems);
     assert.strictEqual(isOrderPlacementEnabled, true);
+  });
+});
+
+describe('PART G — CustomerBackend 15 Oct Handoff: Availability, Block Reasons & Steppers', () => {
+  beforeEach(() => {
+    store.dispatch(clearCart());
+    authStore.saveSession({
+      user: {
+        id: 8001,
+        name: 'Handoff QA Customer',
+        phone: '9998887776',
+      } as any,
+      accessToken: 'fake-handoff-token',
+    });
+  });
+
+  afterEach(() => {
+    store.dispatch(clearCart());
+    authStore.clearSession();
+  });
+
+  test('1. getProductAvailability correctly maps UNAVAILABLE_NO_VENDOR_STOCK to Currently unavailable', () => {
+    const product = {
+      id: 'hinch-p1',
+      name: 'HinchStore Cement Bag',
+      availableQty: 0,
+      inStock: false,
+      availabilityReason: 'UNAVAILABLE_NO_VENDOR_STOCK',
+    };
+
+    const status = getProductAvailability(product);
+    assert.strictEqual(status.isInStock, false);
+    assert.strictEqual(status.canAddToCart, false);
+    assert.strictEqual(status.reasonCode, 'UNAVAILABLE_NO_VENDOR_STOCK');
+    assert.strictEqual(status.friendlyReason, 'Currently unavailable');
+    assert.strictEqual(status.badgeVariant, 'out_of_stock');
+    assert.strictEqual(status.badgeText, 'Currently unavailable');
+  });
+
+  test('2. getProductAvailability correctly maps CHECKOUT_DISABLED to Temporarily unavailable', () => {
+    const product = {
+      id: 'hinch-p2',
+      name: 'HinchStore Drill Machine',
+      availableQty: 10,
+      inStock: false,
+      availabilityReason: 'CHECKOUT_DISABLED',
+    };
+
+    const status = getProductAvailability(product);
+    assert.strictEqual(status.isInStock, false);
+    assert.strictEqual(status.canAddToCart, false);
+    assert.strictEqual(status.reasonCode, 'CHECKOUT_DISABLED');
+    assert.strictEqual(status.friendlyReason, 'Temporarily unavailable');
+    assert.strictEqual(status.badgeVariant, 'out_of_stock');
+    assert.strictEqual(status.badgeText, 'Temporarily unavailable');
+  });
+
+  test('3. getProductAvailability marks low stock pills when availableQty <= 5', () => {
+    const product = {
+      id: 'hinch-p3',
+      name: 'Philips 20W LED Batten',
+      availableQty: 4,
+      inStock: true,
+    };
+
+    const status = getProductAvailability(product);
+    assert.strictEqual(status.isInStock, true);
+    assert.strictEqual(status.canAddToCart, true);
+    assert.strictEqual(status.badgeVariant, 'low_stock');
+    assert.strictEqual(status.badgeText, 'Only 4 left in stock');
+    assert.strictEqual(status.availableQty, 4);
+  });
+
+  test('4. isCartItemOutOfStock catches items exceeding availableQty or marked with server reasons', () => {
+    // Over-limit quantity
+    const overItem: any = {
+      id: 'item-1',
+      productId: 'p-1',
+      quantity: 5,
+      availableQty: 3,
+      inStock: true,
+    };
+    assert.strictEqual(isCartItemOutOfStock(overItem), true);
+    assert.strictEqual(getCartItemUnavailableReason(overItem), 'Only 3 available in stock');
+
+    // Vendor stock missing
+    const noVendorItem: any = {
+      id: 'item-2',
+      productId: 'p-2',
+      quantity: 1,
+      availableQty: 0,
+      reason: 'UNAVAILABLE_NO_VENDOR_STOCK',
+    };
+    assert.strictEqual(isCartItemOutOfStock(noVendorItem), true);
+    assert.strictEqual(getCartItemUnavailableReason(noVendorItem), 'Currently unavailable');
+
+    // Inactive product
+    const inactiveItem: any = {
+      id: 'item-3',
+      productId: 'p-3',
+      quantity: 1,
+      active: false,
+    };
+    assert.strictEqual(isCartItemOutOfStock(inactiveItem), true);
+    assert.strictEqual(getCartItemUnavailableReason(inactiveItem), 'No longer available');
+  });
+
+  test('5. decodeCartErrorMessage translates raw 409 error strings into customer-friendly messages', () => {
+    assert.strictEqual(
+      decodeCartErrorMessage({ message: 'CHECKOUT_DISABLED: HinchStore checkout is off' }),
+      'Temporarily unavailable: checkout for this item is currently disabled.'
+    );
+    assert.strictEqual(
+      decodeCartErrorMessage({ response: { status: 409, data: { message: 'UNAVAILABLE_NO_VENDOR_STOCK' } } }),
+      'Currently unavailable: no vendor inventory available.'
+    );
+    assert.strictEqual(
+      decodeCartErrorMessage({ response: { status: 409, data: { message: 'INSUFFICIENT_STOCK' } } }),
+      'Insufficient stock available for requested quantity.'
+    );
+  });
+
+  test('6. setServerCart preserves canCheckout and checkoutBlockReason', () => {
+    store.dispatch(
+      setServerCart({
+        items: [
+          {
+            cartItemId: 99,
+            productId: 'p-blocked',
+            name: 'Vendor Test Item',
+            quantity: 1,
+            unitPrice: 200,
+            availableQty: 0,
+            reason: 'CHECKOUT_DISABLED',
+          },
+        ] as any,
+        canCheckout: false,
+        checkoutBlockReason: 'HinchStore checkout is temporarily disabled. Please remove HinchStore items to proceed.',
+      } as any)
+    );
+
+    const state = store.getState();
+    assert.strictEqual(selectCanCheckout(state), false);
+    assert.strictEqual(
+      selectCheckoutBlockReason(state),
+      'HinchStore checkout is temporarily disabled. Please remove HinchStore items to proceed.'
+    );
+    assert.strictEqual(selectHasOutOfStockItems(state), true);
   });
 });
 

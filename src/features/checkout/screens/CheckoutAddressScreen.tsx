@@ -80,6 +80,8 @@ import {
   hasCartOutOfStockItems,
   getOutOfStockItems,
 } from '../../../utils/cartStock';
+import { getFriendlyAvailabilityReason } from '../../../utils/productAvailability';
+import { decodeCartErrorMessage, cartManager } from '../../../services/cart/cartManager';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -1338,6 +1340,11 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
   );
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
   const [checkoutPreview, setCheckoutPreview] = useState<any>(null);
+  const isOrderBlockedByPreview = checkoutPreview?.canPlaceOrder === false;
+  const isPaymentDisabled = hasPaymentOosItems || isOrderBlockedByPreview;
+  const orderBlockMessage = isOrderBlockedByPreview
+    ? (getFriendlyAvailabilityReason(checkoutPreview?.orderBlockReason) || checkoutPreview?.orderBlockReason || 'Order placement is currently unavailable for these items.')
+    : 'Items in your cart are currently out of stock';
   const isUserLoggedIn = authStore.isAuthenticated();
 
   const topSafePadding = Math.max(
@@ -1472,17 +1479,30 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
   const handleStartPayment = async () => {
     if (cartItems.length === 0 || isProcessing) return;
 
-    // 0. Guard: Prevent order placement if any cart item is out of stock (Amazon/Flipkart/Zepto standard)
-    if (hasCartOutOfStockItems(cartItems)) {
-      const oos = getOutOfStockItems(cartItems);
-      Alert.alert(
-        '⚠️ Order Placement Blocked',
-        `Some items in your cart (${oos.map((i) => i.name || i.product?.name).join(', ')}) are out of stock. Please return to your cart to remove or replace them before placing your order.`,
-        [
-          { text: 'Return to Cart', onPress: () => navigation.navigate('Cart') },
-        ]
-      );
-      return;
+    // 0. Guard: Prevent order placement if checkoutPreview blocks order or any cart item is out of stock
+    if (isPaymentDisabled) {
+      if (isOrderBlockedByPreview) {
+        Alert.alert(
+          'Order Placement Blocked',
+          orderBlockMessage,
+          [
+            { text: 'Return to Cart', onPress: () => navigation.navigate('Cart') },
+            { text: 'OK' },
+          ]
+        );
+        return;
+      }
+      if (hasPaymentOosItems) {
+        const oos = getOutOfStockItems(cartItems);
+        Alert.alert(
+          '⚠️ Order Placement Blocked',
+          `Some items in your cart (${oos.map((i) => i.name || i.product?.name).join(', ')}) are out of stock. Please return to your cart to remove or replace them before placing your order.`,
+          [
+            { text: 'Return to Cart', onPress: () => navigation.navigate('Cart') },
+          ]
+        );
+        return;
+      }
     }
 
     // 1. Guard order placement: Require authentication before placing order
@@ -1629,6 +1649,38 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
         } catch (payErr: any) {
           console.error('[Payment] createPaymentOrder failed:', payErr);
           const errorMsg = String(payErr?.response?.data?.message || payErr?.message || '');
+          const status = payErr?.response?.status;
+          setIsProcessing(false);
+
+          if (status === 400) {
+            Alert.alert(
+              'Item Unavailable',
+              'One or more items in your cart are inactive, out of stock, or disabled. Please return to your cart to review your order.',
+              [{ text: 'Return to Cart', onPress: () => navigation.navigate('Cart') }, { text: 'OK' }]
+            );
+            return;
+          }
+
+          if (status === 409) {
+            const shortageMsg = decodeCartErrorMessage(payErr);
+            Alert.alert(
+              'Stock Shortage',
+              `Shortage detected: ${shortageMsg}. Please return to your cart to adjust item quantities.`,
+              [{ text: 'Return to Cart', onPress: () => navigation.navigate('Cart') }, { text: 'OK' }]
+            );
+            cartManager.loadServerCart(dispatch).catch(() => {});
+            return;
+          }
+
+          if (status === 404) {
+            Alert.alert(
+              'Address Not Found',
+              'The selected delivery address could not be verified on the server. Please select or add a valid delivery address.',
+              [{ text: 'Select Address', onPress: () => navigation.navigate('CheckoutAddress') }, { text: 'OK' }]
+            );
+            return;
+          }
+
           const isAuthError =
             payErr?.response?.status === 401 ||
             payErr?.response?.status === 403 ||
@@ -1721,6 +1773,38 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
           });
         } catch (placeErr: any) {
           const errorMsg = String(placeErr?.response?.data?.message || placeErr?.message || '');
+          const status = placeErr?.response?.status;
+          setIsProcessing(false);
+
+          if (status === 400) {
+            Alert.alert(
+              'Item Unavailable',
+              'One or more items in your cart are inactive, out of stock, or disabled. Please return to your cart to review your order.',
+              [{ text: 'Return to Cart', onPress: () => navigation.navigate('Cart') }, { text: 'OK' }]
+            );
+            return;
+          }
+
+          if (status === 409) {
+            const shortageMsg = decodeCartErrorMessage(placeErr);
+            Alert.alert(
+              'Stock Shortage',
+              `Shortage detected: ${shortageMsg}. Please return to your cart to adjust item quantities.`,
+              [{ text: 'Return to Cart', onPress: () => navigation.navigate('Cart') }, { text: 'OK' }]
+            );
+            cartManager.loadServerCart(dispatch).catch(() => {});
+            return;
+          }
+
+          if (status === 404) {
+            Alert.alert(
+              'Address Not Found',
+              'The selected delivery address could not be verified on the server. Please select or add a valid delivery address.',
+              [{ text: 'Select Address', onPress: () => navigation.navigate('CheckoutAddress') }, { text: 'OK' }]
+            );
+            return;
+          }
+
           const isAuthError =
             placeErr?.response?.status === 401 ||
             placeErr?.response?.status === 403 ||
@@ -2317,7 +2401,7 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
           </View>
         </View>
 
-        {hasPaymentOosItems && (
+        {isPaymentDisabled && (
           <Text
             style={{
               fontFamily: 'Inter_600SemiBold',
@@ -2327,18 +2411,18 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
               marginBottom: 8,
             }}
           >
-            ⚠️ Order placement disabled: Items in your cart are currently out of stock
+            ⚠️ Order placement disabled: {orderBlockMessage}
           </Text>
         )}
 
         <TouchableOpacity
           onPress={handleStartPayment}
-          disabled={isProcessing || hasPaymentOosItems}
-          activeOpacity={hasPaymentOosItems ? 1 : 0.85}
-          style={[styles.payNowBtn, (isProcessing || hasPaymentOosItems) && { opacity: 0.7 }]}
+          disabled={isProcessing || isPaymentDisabled}
+          activeOpacity={isPaymentDisabled ? 1 : 0.85}
+          style={[styles.payNowBtn, (isProcessing || isPaymentDisabled) && { opacity: 0.7 }]}
         >
           <LinearGradient
-            colors={hasPaymentOosItems ? ['#94A3B8', '#64748B'] : ['#E31E24', '#D32F2F']}
+            colors={isPaymentDisabled ? ['#94A3B8', '#64748B'] : ['#E31E24', '#D32F2F']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.payNowGradient}
@@ -2347,7 +2431,7 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
               <ActivityIndicator color="#FFFFFF" size="small" style={{ marginRight: 8 }} />
             ) : (
               <Ionicons
-                name={hasPaymentOosItems ? 'alert-circle' : 'shield-checkmark'}
+                name={isPaymentDisabled ? 'alert-circle' : 'shield-checkmark'}
                 size={18}
                 color="#FFFFFF"
               />
@@ -2355,15 +2439,15 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
             <Text style={[styles.payNowBtnText, { color: '#FFFFFF' }]}>
               {isProcessing
                 ? 'Initiating Secure Gateway...'
-                : hasPaymentOosItems
-                ? 'Resolve Out of Stock Items'
+                : isPaymentDisabled
+                ? (isOrderBlockedByPreview ? 'Order Placement Blocked' : 'Resolve Out of Stock Items')
                 : selectedMethod === 'cod'
                 ? 'Confirm Pay on Delivery'
                 : `Pay ${formatPrice(total)} Securely`}
             </Text>
             {!isProcessing && (
               <Ionicons
-                name={hasPaymentOosItems ? 'close-circle' : 'arrow-forward'}
+                name={isPaymentDisabled ? 'close-circle' : 'arrow-forward'}
                 size={18}
                 color="#FFFFFF"
               />

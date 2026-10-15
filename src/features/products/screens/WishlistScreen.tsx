@@ -26,6 +26,8 @@ import { useTheme } from '../../../theme';
 import { formatPrice } from '../../../utils';
 import { ExploreCatalogModal } from '../../../components/ui/ExploreCatalogModal';
 import { ApiProduct } from '../../../types/product.types';
+import { productsApi } from '../../../services/api/products.api';
+import { getProductAvailability } from '../../../utils/productAvailability';
 import { wishlistApi } from '../../../services/api/wishlist.api';
 import { cartApi } from '../../../services/api/cart.api';
 import { cartManager } from '../../../services/cart/cartManager';
@@ -58,9 +60,8 @@ const WishlistCard = React.memo(function WishlistCardComponent({
 
   const hasDiscount = Boolean(item.discountPercent && item.discountPercent > 0);
   const savings = hasDiscount ? Math.max(0, (item.comparePrice ?? item.mrp ?? item.price) - item.price) : 0;
-  const rawStock = item.stockQty ?? (item as any)?.stock ?? (item as any)?.stockQuantity;
-  const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
-  const isInStock = (item as any)?.inStock !== false && (item as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
+  // Note: Avoid false OOS from wishlist table's raw stockQty=0; live availability is checked upon "Add to Cart"
+  const isItemInactive = item.active === false;
 
   const handleRemove = () => {
     Animated.sequence([
@@ -122,14 +123,14 @@ const WishlistCard = React.memo(function WishlistCardComponent({
             <View style={styles.productImageWrapper}>
               <Image
                 source={{ uri: primaryImage || item.image || item.imageUrl }}
-                style={[styles.productImage, !isInStock && { opacity: 0.55 }]}
+                style={[styles.productImage, isItemInactive && { opacity: 0.55 }]}
                 contentFit="cover"
                 cachePolicy="memory-disk"
                 transition={200}
               />
-              {!isInStock && (
+              {isItemInactive && (
                 <View style={styles.outOfStockTag}>
-                  <Text style={styles.outOfStockTagText}>OUT OF STOCK</Text>
+                  <Text style={styles.outOfStockTagText}>UNAVAILABLE</Text>
                 </View>
               )}
             </View>
@@ -168,10 +169,10 @@ const WishlistCard = React.memo(function WishlistCardComponent({
                 </View>
               )}
 
-              {/* Add to Cart / Out of Stock Disabled */}
-              {!isInStock ? (
+              {/* Add to Cart Action */}
+              {isItemInactive ? (
                 <View style={[styles.cartBtnWrap, styles.cartBtnWrapDisabled]}>
-                  <Text style={styles.cartBtnTextDisabled}>Out of Stock</Text>
+                  <Text style={styles.cartBtnTextDisabled}>Unavailable</Text>
                 </View>
               ) : (
                 <TouchableOpacity style={styles.cartBtnWrap} onPress={onAddToCart} activeOpacity={0.82}>
@@ -325,21 +326,39 @@ export function WishlistScreen({ navigation }: any) {
 
   const handleAddToCart = useCallback(
     async (item: Product) => {
-      const rawStock = item.stockQty ?? (item as any)?.stock ?? (item as any)?.stockQuantity;
-      const parsedStock = typeof rawStock === 'number' ? rawStock : parseInt(String(rawStock), 10);
-      const isInStock = (item as any)?.inStock !== false && (item as any)?.active !== false && (!isNaN(parsedStock) ? parsedStock > 0 : true);
-      if (!isInStock) {
-        Alert.alert('Out of Stock', 'This product is currently out of stock.');
-        return;
+      const itemId = String(item.productId || item.id || '');
+      try {
+        // Authoritative resolution: re-fetch fresh product to resolve vendor stock & prevent stale wishlist false OOS bug
+        const freshProduct = await productsApi.getProductById(itemId);
+        const targetProduct = freshProduct || item;
+        const availability = getProductAvailability(targetProduct);
+        if (!availability.canAddToCart) {
+          Alert.alert(availability.friendlyReason, 'This product is currently unavailable to add to cart.');
+          return;
+        }
+        await cartManager.addToCart(
+          dispatch,
+          targetProduct,
+          1,
+          (targetProduct as any)?.storeId,
+          navigation,
+          'Wishlist'
+        );
+      } catch (err: any) {
+        const availability = getProductAvailability(item);
+        if (!availability.canAddToCart) {
+          Alert.alert(availability.friendlyReason, 'This product is currently unavailable to add to cart.');
+          return;
+        }
+        await cartManager.addToCart(
+          dispatch,
+          item,
+          1,
+          (item as any)?.storeId,
+          navigation,
+          'Wishlist'
+        );
       }
-      await cartManager.addToCart(
-        dispatch,
-        item,
-        1,
-        (item as any)?.storeId,
-        navigation,
-        'Wishlist'
-      );
     },
     [dispatch, navigation]
   );

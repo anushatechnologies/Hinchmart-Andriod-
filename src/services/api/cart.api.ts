@@ -46,9 +46,19 @@ function normalizeCart(raw: any): BackendCart {
 
     const rawStock = item.stockQty ?? item.stockQuantity ?? (item.product as any)?.stockQty ?? (item.product as any)?.stockQuantity;
     const parsedStock = typeof rawStock === 'number' ? rawStock : rawStock !== undefined && rawStock !== null ? parseInt(String(rawStock), 10) : undefined;
-    const inStock = item.inStock !== undefined ? Boolean(item.inStock) : (item.product as any)?.inStock !== undefined ? Boolean((item.product as any).inStock) : (parsedStock !== undefined ? parsedStock > 0 : undefined);
+    const rawAvailable = item.availableQty ?? item.availableQuantity ?? (item.product as any)?.availableQty;
+    const parsedAvailable = typeof rawAvailable === 'number' ? rawAvailable : rawAvailable !== undefined && rawAvailable !== null ? parseInt(String(rawAvailable), 10) : parsedStock;
+    const availableQty = parsedAvailable !== undefined && !isNaN(parsedAvailable) ? parsedAvailable : parsedStock;
+
+    const reason = item.reason ?? item.availabilityReason ?? (item.product as any)?.availabilityReason ?? null;
     const active = item.active !== undefined ? Boolean(item.active) : (item.product as any)?.active !== undefined ? Boolean((item.product as any).active) : true;
-    const isOutOfStock = inStock === false || active === false || (parsedStock !== undefined && !isNaN(parsedStock) && parsedStock <= 0);
+    const inStock = item.inStock !== undefined
+      ? Boolean(item.inStock)
+      : (item.product as any)?.inStock !== undefined
+      ? Boolean((item.product as any).inStock)
+      : (availableQty !== undefined ? availableQty > 0 : true) && active && reason === null;
+
+    const isOutOfStock = inStock === false || active === false || (availableQty !== undefined && !isNaN(availableQty) && availableQty <= 0) || reason !== null;
 
     return {
       cartItemId: cartItemId,
@@ -67,9 +77,11 @@ function normalizeCart(raw: any): BackendCart {
       lineGst: item.lineGst !== undefined ? Number(item.lineGst) : undefined,
       storeId: item.storeId || item.product?.storeId,
       stockQty: parsedStock,
+      availableQty: availableQty,
       inStock: inStock,
       active: active,
       isOutOfStock: isOutOfStock,
+      reason: reason,
       subcategoryId: item.subcategoryId ?? (item.product as any)?.subcategoryId,
       categoryId: item.categoryId ?? (item.product as any)?.categoryId,
     };
@@ -84,6 +96,12 @@ function normalizeCart(raw: any): BackendCart {
   const grandTotal = Number(
     data.totalAmount ?? data.grandTotal ?? Math.max(0, subtotal - discountAmount + totalGst + deliveryCharge)
   );
+
+  const canCheckout = data.canCheckout !== undefined
+    ? Boolean(data.canCheckout)
+    : !items.some((it) => it.isOutOfStock || it.inStock === false);
+
+  const checkoutBlockReason = data.checkoutBlockReason || null;
 
   return {
     cartId: data.cartId ?? 0,
@@ -100,6 +118,8 @@ function normalizeCart(raw: any): BackendCart {
     grandTotal,
     totalAmount: grandTotal,
     appliedCoupon: data.appliedCoupon ?? data.couponCode ?? null,
+    canCheckout,
+    checkoutBlockReason,
   };
 }
 
