@@ -3,7 +3,7 @@
  * Redesigned for high conversion, clear visual hierarchy, accessible touch targets,
  * clean typography, and seamless integration with live backend state and pricing.
  */
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -358,13 +358,21 @@ const CartItemCard = React.memo(
   }
 );
 
-export function CartScreen({ navigation }: any) {
+export function CartScreen({ navigation, route }: any) {
   const { theme, isDark } = useTheme();
   const dispatch = useAppDispatch();
   const cartItems = useAppSelector(selectCartItems);
   const subtotal = useAppSelector(selectCartSubtotal);
   const canCheckout = useAppSelector((state: any) => state.cart?.canCheckout ?? true);
   const checkoutBlockReason = useAppSelector((state: any) => state.cart?.checkoutBlockReason ?? null);
+
+  const [showSplitNotice, setShowSplitNotice] = useState<boolean>(Boolean(route?.params?.splitNotice));
+
+  useEffect(() => {
+    if (route?.params?.splitNotice) {
+      setShowSplitNotice(true);
+    }
+  }, [route?.params?.splitNotice]);
 
   const [deliverySite, setDeliverySite] = useState<DeliverySite | null>(null);
   const hasUserSelectedSiteRef = useRef<boolean>(false);
@@ -1092,6 +1100,36 @@ export function CartScreen({ navigation }: any) {
               activeOpacity={0.8}
             >
               <Text style={styles.warningSwitchBtnText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Single-Store Fulfillment / Warehouse Notice Banner */}
+        {showSplitNotice && (
+          <View
+            style={[
+              styles.warningAlertBanner,
+              {
+                backgroundColor: isDark ? 'rgba(217, 119, 6, 0.15)' : '#FEF3C7',
+                borderColor: isDark ? '#78350F' : '#FDE68A',
+              },
+            ]}
+          >
+            <Ionicons name="information-circle" size={18} color="#D97706" style={{ marginRight: 8, marginTop: 1 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.warningAlertTitle, { color: isDark ? '#FDE68A' : '#92400E' }]}>
+                Delivery Notice: Separate Orders Required
+              </Text>
+              <Text style={[styles.warningAlertSub, { color: isDark ? '#FCD34D' : '#B45309' }]}>
+                Items in your cart ship from different regional warehouses and cannot be combined into a single shipment. Please remove one item and order it separately.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setShowSplitNotice(false)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ padding: 4 }}
+            >
+              <Ionicons name="close" size={16} color={isDark ? '#FDE68A' : '#92400E'} />
             </TouchableOpacity>
           </View>
         )}

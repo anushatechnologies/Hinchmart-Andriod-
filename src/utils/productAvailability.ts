@@ -110,12 +110,35 @@ export function getProductAvailability(
   } else if (hasAvailableProp || hasStockProp) {
     if (availableQty <= 0) {
       isInStock = false;
-    } else if (typeof product.inStock === 'boolean') {
-      isInStock = product.inStock;
-    } else if (typeof (product.product as any)?.inStock === 'boolean') {
-      isInStock = (product.product as any).inStock;
     } else {
-      isInStock = true;
+      // 4. MOQ (Minimum Order Quantity) check: if available inventory cannot fulfill supplier MOQ
+      const rawMoq = product.moq ?? product.minimumOrderQuantity ?? product.minOrderQty;
+      const parsedMoq = typeof rawMoq === 'number' ? rawMoq : parseInt(String(rawMoq || 1), 10);
+      const moq = !isNaN(parsedMoq) && parsedMoq > 0 ? parsedMoq : 1;
+
+      if (moq > 1 && availableQty < moq) {
+        const friendlyReason = `Minimum order quantity (${moq}) not available in stock`;
+        return {
+          isInStock: false,
+          availableQty,
+          badgeText: 'Temporarily unavailable',
+          badgeVariant: 'out_of_stock',
+          badgeColor: '#DC2626',
+          badgeBg: '#FEE2E2',
+          badgeBorder: '#FECACA',
+          canAddToCart: false,
+          reasonCode: 'INSUFFICIENT_STOCK',
+          friendlyReason,
+        };
+      }
+
+      if (typeof product.inStock === 'boolean') {
+        isInStock = product.inStock;
+      } else if (typeof (product.product as any)?.inStock === 'boolean') {
+        isInStock = (product.product as any).inStock;
+      } else {
+        isInStock = true;
+      }
     }
   } else if (typeof product.inStock === 'boolean') {
     isInStock = product.inStock;

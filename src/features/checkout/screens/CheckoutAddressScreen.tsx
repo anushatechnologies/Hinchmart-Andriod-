@@ -1662,6 +1662,26 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
           }
 
           if (status === 409) {
+            const isConsignmentSplitError =
+              errorMsg.toUpperCase().includes('NO CONSIGNMENT VENDOR') ||
+              errorMsg.toUpperCase().includes('SUFFICIENT STOCK TO FULFILL');
+
+            if (isConsignmentSplitError) {
+              Alert.alert(
+                'Delivery Notice: Separate Orders Required',
+                'Items in your cart ship from different regional warehouses and cannot be combined into a single shipment. Please remove one item and order it separately.',
+                [
+                  {
+                    text: 'Review Cart',
+                    onPress: () => navigation.navigate('Cart', { splitNotice: true }),
+                  },
+                  { text: 'OK' },
+                ]
+              );
+              cartManager.loadServerCart(dispatch).catch(() => {});
+              return;
+            }
+
             const shortageMsg = decodeCartErrorMessage(payErr);
             Alert.alert(
               'Stock Shortage',
@@ -1786,6 +1806,26 @@ export function CheckoutPaymentScreen({ navigation, route }: any) {
           }
 
           if (status === 409) {
+            const isConsignmentSplitError =
+              errorMsg.toUpperCase().includes('NO CONSIGNMENT VENDOR') ||
+              errorMsg.toUpperCase().includes('SUFFICIENT STOCK TO FULFILL');
+
+            if (isConsignmentSplitError) {
+              Alert.alert(
+                'Delivery Notice: Separate Orders Required',
+                'Items in your cart ship from different regional warehouses and cannot be combined into a single shipment. Please remove one item and order it separately.',
+                [
+                  {
+                    text: 'Review Cart',
+                    onPress: () => navigation.navigate('Cart', { splitNotice: true }),
+                  },
+                  { text: 'OK' },
+                ]
+              );
+              cartManager.loadServerCart(dispatch).catch(() => {});
+              return;
+            }
+
             const shortageMsg = decodeCartErrorMessage(placeErr);
             Alert.alert(
               'Stock Shortage',

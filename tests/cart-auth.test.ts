@@ -1621,11 +1621,23 @@ describe('PART G — CustomerBackend 15 Oct Handoff: Availability, Block Reasons
     );
     assert.strictEqual(
       decodeCartErrorMessage({ response: { status: 409, data: { message: 'UNAVAILABLE_NO_VENDOR_STOCK' } } }),
-      'Currently unavailable: no vendor inventory available.'
+      'Currently unavailable: no vendor inventory available in your region.'
     );
     assert.strictEqual(
       decodeCartErrorMessage({ response: { status: 409, data: { message: 'INSUFFICIENT_STOCK' } } }),
-      'Insufficient stock available for requested quantity.'
+      'Requested quantity exceeds available stock.'
+    );
+    assert.strictEqual(
+      decodeCartErrorMessage({ message: "Cannot add 'Cement' to cart: OUT_OF_STOCK" }),
+      'This item is currently out of stock.'
+    );
+    assert.strictEqual(
+      decodeCartErrorMessage({ message: 'No consignment vendor has sufficient stock to fulfill this order.' }),
+      'These items cannot be shipped together from a single hub. Please try ordering them as separate orders.'
+    );
+    assert.strictEqual(
+      decodeCartErrorMessage({ message: 'Consignment stock reservation failed across all candidate vendor stores.' }),
+      'Items in your cart were just purchased by another customer. Please adjust quantities.'
     );
   });
 
@@ -1655,6 +1667,54 @@ describe('PART G — CustomerBackend 15 Oct Handoff: Availability, Block Reasons
       'HinchStore checkout is temporarily disabled. Please remove HinchStore items to proceed.'
     );
     assert.strictEqual(selectHasOutOfStockItems(state), true);
+  });
+
+  test('7. getProductAvailability enforces MOQ guard when availableQty is below MOQ', () => {
+    const bulkProduct = {
+      id: 'bulk-cement-1',
+      name: 'UltraTech Cement (50 Bags Min)',
+      availableQty: 15,
+      moq: 50,
+      inStock: true,
+    };
+
+    const status = getProductAvailability(bulkProduct);
+    assert.strictEqual(status.isInStock, false);
+    assert.strictEqual(status.canAddToCart, false);
+    assert.strictEqual(status.badgeText, 'Temporarily unavailable');
+    assert.strictEqual(status.badgeVariant, 'out_of_stock');
+    assert.strictEqual(status.friendlyReason, 'Minimum order quantity (50) not available in stock');
+  });
+
+  test('8. addToCart intercepts 409 STORE_MISMATCH and flags storeMismatch', async () => {
+    const originalAddToCart = cartApi.addToCart;
+    (cartApi as any).addToCart = async () => {
+      const err: any = new Error('STORE_MISMATCH');
+      err.response = {
+        status: 409,
+        data: {
+          error: 'STORE_MISMATCH',
+          message: "Cart contains items from Store #1 ('HinchStore'). Replace cart?",
+          currentStore: { id: 1, name: 'HinchStore' },
+          newStore: { id: 10, name: 'Vendor Steel Depot' },
+        },
+      };
+      throw err;
+    };
+
+    try {
+      const res = await cartManager.addToCart(store.dispatch, {
+        id: 'steel-01',
+        name: 'TMT Steel 12mm',
+        price: 550,
+      } as any, 1, 10);
+
+      assert.strictEqual(res.success, false);
+      assert.strictEqual((res as any).storeMismatch, true);
+      assert.strictEqual((res as any).error, 'STORE_MISMATCH');
+    } finally {
+      cartApi.addToCart = originalAddToCart;
+    }
   });
 });
 

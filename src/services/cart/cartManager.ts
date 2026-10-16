@@ -18,7 +18,34 @@ const showAlert = (title: string, message: string) => {
     console.warn(`[Alert] ${title}: ${message}`);
   }
 };
+
+const showConfirmDialog = (
+  title: string,
+  message: string,
+  confirmText: string,
+  onConfirm: () => void,
+  cancelText = 'Cancel',
+  onCancel?: () => void
+) => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { Alert } = require('react-native');
+    Alert?.alert?.(
+      title,
+      message,
+      [
+        { text: cancelText, style: 'cancel', onPress: onCancel },
+        { text: confirmText, style: 'destructive', onPress: onConfirm },
+      ],
+      { cancelable: true }
+    );
+  } catch {
+    console.warn(`[Confirm] ${title}: ${message}`);
+  }
+};
+
 import {
+  clearCart,
   updateItemQuantity,
   removeItem,
   setServerCart,
@@ -45,10 +72,19 @@ export function decodeCartErrorMessage(err: any): string {
     return 'Temporarily unavailable: checkout for this item is currently disabled.';
   }
   if (cleanMsg.includes('UNAVAILABLE_NO_VENDOR_STOCK')) {
-    return 'Currently unavailable: no vendor inventory available.';
+    return 'Currently unavailable: no vendor inventory available in your region.';
   }
-  if (cleanMsg.includes('INSUFFICIENT_STOCK')) {
-    return 'Insufficient stock available for requested quantity.';
+  if (cleanMsg.includes('OUT_OF_STOCK')) {
+    return 'This item is currently out of stock.';
+  }
+  if (cleanMsg.includes('NO CONSIGNMENT VENDOR') || cleanMsg.includes('SUFFICIENT STOCK TO FULFILL')) {
+    return 'These items cannot be shipped together from a single hub. Please try ordering them as separate orders.';
+  }
+  if (cleanMsg.includes('CONSIGNMENT STOCK RESERVATION FAILED') || cleanMsg.includes('RESERVATION FAILED')) {
+    return 'Items in your cart were just purchased by another customer. Please adjust quantities.';
+  }
+  if (cleanMsg.includes('INSUFFICIENT_STOCK') || cleanMsg.includes('EXCEEDS AVAILABLE')) {
+    return 'Requested quantity exceeds available stock.';
   }
   if (cleanMsg.includes('PRODUCT_INACTIVE')) {
     return 'This product is no longer available.';
@@ -155,7 +191,7 @@ export const cartManager = {
     navigation?: any,
     returnScreen?: string,
     returnParams?: any
-  ): Promise<{ success: boolean; requiresAuth?: boolean; inFlight?: boolean; cart?: BackendCart; error?: string }> {
+  ): Promise<{ success: boolean; requiresAuth?: boolean; inFlight?: boolean; cart?: BackendCart; error?: string; storeMismatch?: boolean }> {
     const productId = getProductId(product);
     if (!productId) return { success: false, error: 'Invalid product ID' };
 
@@ -250,6 +286,44 @@ export const cartManager = {
       return { success: true };
     } catch (err: any) {
       console.warn('[cartManager] Server addToCart error:', err?.message);
+
+      // Handle 409 STORE_MISMATCH (Option 1: Single-Store Consignment Fulfillment)
+      const isStoreMismatch =
+        err?.response?.data?.error === 'STORE_MISMATCH' ||
+        err?.response?.data?.code === 'STORE_MISMATCH' ||
+        String(err?.response?.data?.message || '').toUpperCase().includes('STORE_MISMATCH') ||
+        String(err?.response?.data?.message || '').includes('Replace cart?');
+
+      if (isStoreMismatch) {
+        const currentStoreName = err?.response?.data?.currentStore?.name || 'another regional store';
+        const newStoreName = err?.response?.data?.newStore?.name || product?.storeName || 'this store';
+
+        showConfirmDialog(
+          'Replace Cart Items?',
+          `Your cart currently contains items from ${currentStoreName}. Products from different regional stores cannot be combined in a single order.\n\nClear your existing cart to start a new order with items from ${newStoreName}?`,
+          'Replace Cart',
+          async () => {
+            try {
+              await cartApi.clearCart();
+              dispatch(clearCart());
+              // Re-attempt adding the product to cart
+              await cartManager.addToCart(
+                dispatch,
+                product,
+                targetQty,
+                prodStoreId,
+                navigation,
+                returnScreen,
+                returnParams
+              );
+            } catch (retryErr: any) {
+              showAlert('Cart Error', decodeCartErrorMessage(retryErr));
+            }
+          }
+        );
+        return { success: false, storeMismatch: true, error: 'STORE_MISMATCH' };
+      }
+
       const friendlyError = decodeCartErrorMessage(err);
       showAlert('Cart Error', friendlyError);
       try {
